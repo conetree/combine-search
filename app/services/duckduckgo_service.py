@@ -72,6 +72,10 @@ class DuckduckgoService(BaseSearch):
                 request_urls = self._extract_request_urls(filter_links, links_num)
                 # logger.info("search_web->request_urls:%s", request_urls)
                 contents_result = self._fetch_contents_concurrently(request_urls, headers)
+
+                if mode == "html":
+                    return response_success("从搜索结果中抓取的源码内容", contents_result)
+
                 for item in contents_result:
                     if item["content"]:
                         item["content"] = self.extract_content_text(item["content"])

@@ -56,12 +56,15 @@ def fetch_beautifulsoup(request: Request, url: list = Depends(validate_url),
                         mode: str = Query("html", description="返回内容类型:html,text")):
     return controller.fetch_beautifulsoup(url, dict(request.headers), mode)
 
-
 @router.get("/fetch-cloudscraper")
 def fetch_cloudscraper(request: Request, url: list = Depends(validate_url),
                        mode: str = Query("html", description="返回内容类型:html,text")):
     return controller.fetch_cloudscraper(url, dict(request.headers), mode)
 
+@router.get("/fetch-playwright")
+def fetch_playwright(request: Request, url: list = Depends(validate_url),
+                       mode: str = Query("html", description="返回内容类型:html,text")):
+    return controller.fetch_playwright(url, dict(request.headers), mode)
 
 @router.get("/fetch")
 def fetch(request: Request, url: list = Depends(validate_url),
@@ -72,7 +75,7 @@ def fetch(request: Request, url: list = Depends(validate_url),
 @router.get("/duckduckgo")
 def search_duckduckgo(request: Request, q: str = Query(None, description="搜索关键词"),
                       mode: str = Query(
-                          "text", description="返回内容类型:link,text"),
+                          "text", description="返回内容类型:link,text,html"),
                       links_num: int = Query(2, description="链接数量"),
                       http_tool: str = Query("firecrawl", description="抓取工具")):
     return search_duckduckgo_web(request, q, mode, links_num, http_tool)
@@ -81,7 +84,7 @@ def search_duckduckgo(request: Request, q: str = Query(None, description="搜索
 @router.get("/duckduckgo-api")
 def search_duckduckgo_api(request: Request, q: str = Query(None, description="搜索关键词"),
                           mode: str = Query(
-                              "text", description="返回内容类型:link,text"),
+                              "text", description="返回内容类型:link,text,html"),
                           links_num: int = Query(2, description="链接数量"),
                           http_tool: str = Query("firecrawl", description="抓取工具")):
     if q:
@@ -94,7 +97,7 @@ def search_duckduckgo_api(request: Request, q: str = Query(None, description="�
 @router.get("/duckduckgo-web")
 def search_duckduckgo_web(request: Request, q: str = Query(None, description="搜索关键词"),
                           mode: str = Query(
-                              "text", description="返回内容类型:link,text"),
+                              "text", description="返回内容类型:link,text,html"),
                           links_num: int = Query(2, description="链接数量"),
                           http_tool: str = Query("firecrawl", description="抓取工具")):
     if q:
@@ -107,7 +110,7 @@ def search_duckduckgo_web(request: Request, q: str = Query(None, description="�
 
 @router.get("/bing-web")
 def search_bing_web(request: Request, q: str = Query(None, description="搜索关键词"),
-                    mode: str = Query("text", description="返回内容类型:link,text"),
+                    mode: str = Query("text", description="返回内容类型:link,text,html"),
                     links_num: int = Query(2, description="链接数量"),
                     http_tool: str = Query("request", description="抓取工具")):
     if q:
@@ -120,7 +123,7 @@ def search_bing_web(request: Request, q: str = Query(None, description="搜索�
 
 @router.get("/baidu-web")
 def search_baidu_web(request: Request, q: str = Query(None, description="搜索关键词"),
-                     mode: str = Query("text", description="返回内容类型:link,text"),
+                     mode: str = Query("text", description="返回内容类型:link,text,html"),
                      links_num: int = Query(2, description="链接数量"),
                      http_tool: str = Query("request", description="抓取工具")):
     if q:
@@ -134,7 +137,7 @@ def search_baidu_web(request: Request, q: str = Query(None, description="搜索�
 @router.get("/google-web")
 def search_google_web(request: Request, q: str = Query(None, description="搜索关键词"),
                       mode: str = Query(
-                          "text", description="返回内容类型:link,text"),
+                          "text", description="返回内容类型:link,text,html"),
                       links_num: int = Query(2, description="链接数量"),
                       http_tool: str = Query("firecrawl", description="抓取工具")):
     if q:
@@ -147,7 +150,7 @@ def search_google_web(request: Request, q: str = Query(None, description="搜索
 
 @router.get("/sogou-web")
 def search_sogou_web(request: Request, q: str = Query(None, description="搜索关键词"),
-                     mode: str = Query("text", description="返回内容类型:link,text"),
+                     mode: str = Query("text", description="返回内容类型:link,text,html"),
                      links_num: int = Query(2, description="链接数量"),
                      http_tool: str = Query("request", description="抓取工具")):
     if q:
@@ -160,12 +163,24 @@ def search_sogou_web(request: Request, q: str = Query(None, description="搜索�
 
 @router.get("/so-web")
 def search_so_web(request: Request, q: str = Query(None, description="搜索关键词"),
-                  mode: str = Query("text", description="返回内容类型:link,text"),
+                  mode: str = Query("text", description="返回内容类型:link,text,html"),
                   links_num: int = Query(2, description="链接数量"),
                   http_tool: str = Query("request", description="抓取工具")):
     if q:
         q = urllib.parse.quote(q)
         result = controller.search_so_web(
+            q, mode, links_num, dict(request.headers), http_tool)
+        return result
+    return _search_response_error(request)
+
+@router.get("/douban-web")
+def search_douban_web(request: Request, q: str = Query(None, description="搜索关键词"),
+                  mode: str = Query("text", description="返回内容类型:link,text,html"),
+                  links_num: int = Query(2, description="链接数量"),
+                  http_tool: str = Query("request", description="抓取工具")):
+    if q:
+        q = urllib.parse.quote(q)
+        result = controller.search_douban_web(
             q, mode, links_num, dict(request.headers), http_tool)
         return result
     return _search_response_error(request)

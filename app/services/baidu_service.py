@@ -70,6 +70,10 @@ class BaiduService(BaseSearch):
             # 4. 根据 links_num 提取需要抓取的 URL
             request_urls = self._extract_request_urls(filter_links, links_num)
             contents_result = self._fetch_contents_concurrently(request_urls, headers)
+
+            if mode == "html":
+                return response_success("从搜索结果中抓取的源码内容", contents_result)
+
             # 对返回内容进行文本提取清洗
             for item in contents_result:
                 if item.get("content"):

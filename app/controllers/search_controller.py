@@ -56,6 +56,10 @@ class SearchController:
         logger.info(f"fetch_cloudscraper抓取的 URL: {url}")
         return self.service.process_fetch(url, "cloudscraper", headers, mode)
 
+    def fetch_playwright(self, url: list, headers: dict = None, mode = "html"):
+        logger.info(f"fetch_playwright抓取的 URL: {url}")
+        return self.service.process_fetch(url, "playwright", headers, mode)
+    
     def fetch(self, url: list, headers: dict = None, mode = "html"):
         return self.service.search(url, headers, mode)
 
@@ -99,44 +103,53 @@ class SearchController:
         service = self.get_search_engine_service("so", http_tool)
         return service.search_web(q, mode, links_num, headers)
 
+    # 通过豆瓣电影搜索抓取
+    def search_douban_web(self, q: str, mode: str, links_num: int, headers: dict = None, http_tool="request"):
+        service = self.get_search_engine_service("douban", http_tool)
+        return service.search_web(q, mode, links_num, headers)
+
     def index(self):
         return {
             "message": "用以下几种方式抓取网页，各有优劣。",
             "paths": [
                 {
-                    "path": "/search/bing-web?q=电影名称 豆瓣电影 百科 IMDB 猫眼",
-                    "desc": "基于bing网页搜索抓取，返回文本。"
+                    "path": "/search/bing-web?q=念无双 电视剧 豆瓣 百科&mode=link",
+                    "desc": "基于bing网页搜索抓取，返回链接。"
                 },
                 {
-                    "path": "/search/baidu-web?q=电影名称 豆瓣电影 百科 IMDB 猫眼",
-                    "desc": "基于baidu网页搜索抓取，返回文本。"
+                    "path": "/search/baidu-web?q=念无双 电视剧 豆瓣 百科&mode=text&links_num=5",
+                    "desc": "基于baidu网页搜索抓取，指定抓取数量，默认2条。"
                 },
                 {
-                    "path": "/search/google-web?q=电影名称 豆瓣电影 百科 IMDB 猫眼",
+                    "path": "/search/google-web?q=念无双 电视剧 豆瓣 百科",
                     "desc": "基于google网页搜索抓取，返回文本。需要穿墙，故使用firecrawl工具抓取，免费有次数限制"
                 },
                 {
-                    "path": "/search/sogou?q=电影名称 豆瓣电影 百科 IMDB 猫眼",
-                    "desc": "基于sogou网页搜索抓取，返回文本。"
+                    "path": "/search/douban-web?q=念无双&http_tool=agent",
+                    "desc": "基于豆瓣影视搜索抓取，通过Nginx代理工具，返回文本。"
                 },
                 {
-                    "path": "/search/so?q=电影名称 豆瓣电影 百科 IMDB 猫眼",
-                    "desc": "基于360网页搜索抓取，返回文本。"
+                    "path": "/search/sogou-web?q=念无双 电视剧 豆瓣 百科&mode=link&http_tool=curl",
+                    "desc": "基于sogou网页搜索抓取，指定工具和模式。"
                 },
                 {
-                    "path": "/search/duckduckgo-web?q=电影名称 豆瓣电影 百科 IMDB 猫眼",
-                    "desc": "基于duckduckgo网页搜索抓取，返回文本。需要穿墙，故使用firecrawl工具抓取，免费有次数限制"
+                    "path": "/search/so-web?q=念无双 电视剧 豆瓣 百科&http_tool=curl&links_num=3",
+                    "desc": "基于360网页搜索抓取，通过agent工具，抓取3条。"
                 },
                 {
-                    "path": "/search/duckduckgo-web?q=电影名称 豆瓣电影 百科 IMDB 猫眼&mode=link",
+                    "path": "/search/duckduckgo-web?q=念无双 电视剧 豆瓣 百科",
+                    "desc": "基于duckduckgo网页搜索抓取，返回文本。需要穿墙，默认使用firecrawl工具抓取，免费有次数限制"
+                },
+                {
+                    "path": "/search/duckduckgo-web?q=念无双 电视剧 豆瓣 百科&mode=link",
                     "desc": "基于duckduckgo网页搜索抓取，返回链接。"
                 },
                 {
-                    "path": "/search/duckduckgo-api?q=电影名称 豆瓣电影 百科 IMDB 猫眼",
+                    "path": "/search/duckduckgo-api?q=念无双 电视剧 豆瓣 百科",
                     "desc": "基于duckduckgo-search插件抓取，返回文本。需要支持穿墙。"
                 },
                 {
-                    "path": "/search/duckduckgo-suggest?q=贵州茅台600519",
+                    "path": "/search/duckduckgo-suggest?q=念无双 电视剧",
                     "desc": "基于duckduckgo API抓取suggest。"
                 },
                 {
@@ -149,7 +162,7 @@ class SearchController:
                 },
                 {
                     "path": "/search/fetch-agent?url=https://movie.douban.com&url=https://baike.baidu.com",
-                    "desc": "通过 Nginx 代理服务器进行抓取。适用于需要绕过封禁或进行定向请求的场景。"
+                    "desc": "通过 Nginx 代理服务器进行抓取。适用于需要绕过封禁或进行定向请求的场景，抓取失败时可以作为备份。"
                 },
                 {
                     "path": "/search/fetch-firecrawl?url=https://movie.douban.com&url=https://baike.baidu.com",
@@ -169,7 +182,11 @@ class SearchController:
                 },
                 {
                     "path": "/search/fetch-cloudscraper?url=https://movie.douban.com&url=https://baike.baidu.com",
-                    "desc": "利用 Cloudscraper 库进行抓取。适用于穿透Cloudflare WAF防火墙，绕过爬虫封禁。"
+                    "desc": "利用 Cloudscraper 库进行抓取，推荐工具。适用于穿透Cloudflare WAF等防火墙，绕过爬虫封禁。"
+                },
+                {
+                    "path": "/search/fetch-playwright?url=https://movie.douban.com&url=https://baike.baidu.com",
+                    "desc": "利用 Playwright 库进行抓取，内置高级反爬虫绕过功能。适用于动态渲染页面，绕过强大的爬虫封禁。"
                 },
             ]
         }

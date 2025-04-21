@@ -18,7 +18,7 @@ import re
 from app.tools.http_clients import (
     AgentClient, CurlClient, SimpleHTTPClient,
     ScrapyClient, FirecrawlClient, SeleniumClient,
-    CloudscraperClient, BeautifulSoupClient)
+    CloudscraperClient, BeautifulSoupClient, PlaywrightClient)
 from typing import List
 
 # 配置常量
@@ -48,6 +48,8 @@ class BaseSearch(ABC):
             retries=DEFAULT_RETRIES, timeout=DEFAULT_TIMEOUT)
         self.cloudscraper_client = CloudscraperClient(
             retries=DEFAULT_RETRIES, timeout=DEFAULT_TIMEOUT)
+        self.playwright_client = PlaywrightClient(config = None,
+            retries=DEFAULT_RETRIES, timeout=DEFAULT_TIMEOUT)
         
         # 构建客户端映射，根据请求方式选择对应的客户端
         self.clients = {
@@ -59,6 +61,7 @@ class BaseSearch(ABC):
             "scrapy": self.scrapy_client,
             "selenium": self.selenium_client,
             "cloudscraper": self.cloudscraper_client,
+            "playwright": self.playwright_client,
         }
 
     def set_http_tool(self, http_tool: str):

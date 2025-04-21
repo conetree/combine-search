@@ -8,6 +8,7 @@ import random
 import string
 import secrets
 from urllib.parse import urlparse
+from fake_useragent import UserAgent
 from app.core.logging import logger
 
 # 可选：定义一组随机 User-Agent 列表
@@ -27,8 +28,7 @@ class WebUtils:
             - 生成包含 __uid、session_id 和 token 的随机 Cookie 字符串
         """
         components = [
-            f"__uid={random.randint(100000, 999999)}",
-            f"BAIDUID={WebUtils.generate_BAIDUID_value()}",
+            # f"__uid={random.randint(100000, 999999)}",
             f"session_id={''.join(random.choices(string.ascii_letters + string.digits, k=24))}",
             f"token={''.join(random.choices(string.hexdigits.lower(), k=32))}"
         ]
@@ -40,11 +40,13 @@ class WebUtils:
         获取默认请求头（无业务参数）：
             - 返回包含常见 HTTP 请求头的字典
         """
+        ua = UserAgent()
         return {
-            "User-Agent": random.choice(RANDOM_USER_AGENTS),
+            # "User-Agent": random.choice(RANDOM_USER_AGENTS),
+            "User-Agent": ua.random, # 从fake_useragent库里随机选择UA
             "Accept": "text/html,application/xhtml+xml,application/xml;application/json;q=0.9,image/webp,image/apng,*/*;q=0.8",
             "Accept-Encoding": "identity",
-            "Accept-Language": random.choice(['en-US,en;q=0.9', 'zh-CN,zh;q=0.8', "zh-CN,zh;q=0.9,en;q=0.8"]),
+            "Accept-Language": random.choice(['zh-CN,zh;q=0.8', "zh-CN,zh;q=0.9,en;q=0.8"]),
             "Connection": "keep-alive",
             "Cookie": WebUtils.generate_random_cookie(),
             # "Upgrade-Insecure-Requests": "1", # 是否将 不安全的HTTP 请求升级到 HTTPS
@@ -56,6 +58,7 @@ class WebUtils:
         """
         每次调用生成**完全随机**的许可证密钥（符合历史格式）
         格式：32位随机十六进制:SL=X:NR=Y:FG=Z（X∈{0,1}, Y≥1, Z∈{0,1}）
+        例子：9B4BEA99EDD0815C9A39D81CE9B8C50A
         """
         # 1. 32位安全随机十六进制（128位熵）
         hex_part = secrets.token_hex(16).upper()
@@ -84,74 +87,92 @@ class WebUtils:
             parsed = urlparse(url)
             host = parsed.netloc
 
-            # 针对 baike.baidu.com 的反爬策略
-            if 'baike.baidu.com' in host:
-                # headers = user_headers
-                headers["Cookie"] = headers.get(
-                    "Cookie", "") + "; BAIDUID=9B4BEA99EDD0815C9A39D81CE9B8C50A:SL=0:NR=10:FG=1"
-
-            # 针对 movie.douban.com 的反爬策略
-            if 'movie.douban.com' in host:
-                headers["Cookie"] = headers.get(
-                    "Cookie", "") + "; __yadk_uid=MFsoFyM8BOiB4lv8QUXoZ9wlEBVWDPrR"
+            # 针对 baidu.com 的反爬策略
+            if 'baidu.com' in host or 'baike.baidu.com' in host:
+                headers.update({
+                    'Referer': 'https://www.baidu.com/',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                })
+                if 'BAIDUID' not in headers['Cookie']:
+                    baiduid = WebUtils.generate_BAIDUID_value()
+                    headers["Cookie"] = headers.get(
+                        "Cookie", "") + "; BAIDUID={baiduid}:SL=0:NR=10:FG=1"
 
             # 针对 360搜索 (www.so.com) 的反爬策略
             if 'www.so.com' in host:
                 headers.update({
-                    'Sec-Fetch-Dest': 'document',
-                    'Sec-Fetch-Mode': 'navigate',
-                    'Sec-Fetch-Site': 'same-origin',
-                    'Priority': 'u=0, i'
+		    #'Host': 'www.so.com',
+		    'Referer': 'https://www.so.com/',
+		    'Sec-Fetch-Dest': 'document',
+		    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+		    'Connection': 'keep-alive',
+                    'Sec-Fetch-User': '?1',
+		    'Priority': 'u=0, i'
                 })
-
-            # 针对百度系站点的 cookie 处理
-            if 'baidu.com' in host:
-                headers.setdefault('Cookie', '')
-                if 'BAIDUID' not in headers['Cookie']:
-                    headers['Cookie'] += '; BAIDUID=FAKE_ID_FOR_ANTI_SPIDER'
+                if 'QiHooGUID' not in headers['Cookie']:
+                    headers["Cookie"] = headers.get(
+                        "Cookie", "") + "; QiHooGUID=68676EB9A427AAEA16C4C1E8899D6209.1744163253954; __guid=15484592.58638361683777900.1744163254047.47; _S=11KMTkrjcvB4r9r54yEmpMUcRuub9JfSBnh+Cq00aekeo=; so_huid=11KMTkrjcvB4r9r54yEmpMUcRuub9JfSBnh%2BCq00aekeo%3D"
 
             # 针对豆瓣 (douban.com) 的反爬机制
             if 'douban.com' in host:
-                headers.setdefault('Cookie', '')
                 if 'bid' not in headers['Cookie']:
-                    headers['Cookie'] += '; bid="FAKE_BID_STRING"'
+                    headers["Cookie"] = headers.get(
+                    "Cookie", "") +  '; bid="4mTU3-etpfY"'
+                headers.update({
+                    'Referer': 'https://www.douban.com/',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                })
+
+
+            # 针对 movie.douban.com 的反爬策略
+            if 'movie.douban.com' in host:
+                if '__yadk_uid' not in headers['Cookie']:
+                    headers["Cookie"] = headers.get(
+                        "Cookie", "") + "; __yadk_uid=xhp8umkXwrifRJee6NIEDFwyPscmNndJ"
+                headers.update({
+                    'Referer': 'https://movie.douban.com/',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                })
 
             # 针对 Bing 搜索 (bing.com) 的反爬策略
             if 'bing.com' in host:
                 headers.update({
-                    'Accept-Language': 'en-US,en;q=0.9',
                     'Referer': 'https://www.bing.com/',
                     'Sec-Fetch-Dest': 'document',
                     'Sec-Fetch-Mode': 'navigate',
                     'Sec-Fetch-Site': 'none',
                     'Sec-Fetch-User': '?1',
-                    'Upgrade-Insecure-Requests': '1'
                 })
-                headers.setdefault('Cookie', '')
                 if '_EDGE_V' not in headers['Cookie']:
-                    headers['Cookie'] += '; _EDGE_V=1; MUID=1234567890ABCDEF1234567890ABCDEF'
+                    headers["Cookie"] = headers.get(
+                    "Cookie", "") +  '; _EDGE_V=1; MUID=1234567890ABCDEF1234567890ABCDEF'
 
             # 针对 Google 搜索 (google.com) 的反爬策略
             if 'google.com' in host:
-                # headers = user_headers
                 headers.update({
-                    'Accept-Language': 'en-US,en;q=0.9',
                     'Referer': 'https://www.google.com/',
                     'Sec-Fetch-Dest': 'document',
                     'Sec-Fetch-Mode': 'navigate',
                     'Sec-Fetch-Site': 'none',
                     'Sec-Fetch-User': '?1',
-                    'Upgrade-Insecure-Requests': '1'
                 })
-                headers.setdefault('Cookie', '')
                 if 'NID' not in headers['Cookie']:
-                    headers['Cookie'] += '; NID=123=ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefg'
+                    headers["Cookie"] = headers.get(
+                    "Cookie", "") +  '; NID=523=cSSZeP4PeHRWwPuhk9JSem7HG7OfonlOFFJJuCfhuZ2PuuPQKXg5SG55P8SznFb92XS_U4f59uZmv6uNeZZgxgK4UFAuLXvgwt-GnKuvP1na1sEVgu4gqv-mx7AGpnWtQgxLsfd2LMhLGbrR2nRsLWeA7PHI4bjqnEYW1hDMePC2tOd9Ru_wg-9n1Q5T9vAzsS8B4U-FUYiglWh6pBHj75EZx7kUEAF2WlTx58JvQTtf0Mr4PYMR43eGluSEZjtNvcv6bq-PYXFI1bWtWnaJNDfhes-YMALuAY7cGwi4DSth6ZRXEmUipYPbtX3l15gRi3dhKDKMwcZcHimLbMB8eXbxu4AQV9N9XeE5hlZhTiMVlzPWsk2FC7tm9nTVhF6T8aWVy1MDQJQ'
 
             # 处理搜狗搜索
             if 'sogou.com' in host:
                 headers.update({
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36',
-                    'Accept-Language': 'zh-CN,zh;q=0.9',
                     'Referer': 'https://www.sogou.com/',
                     'Sec-Fetch-Dest': 'document',
                     'Sec-Fetch-Mode': 'navigate',
@@ -162,16 +183,14 @@ class WebUtils:
             # 针对 DuckDuckGo 搜索 (duckduckgo.com) 的反爬策略
             if 'duckduckgo.com' in host:
                 headers.update({
-                    'Accept-Language': 'en-US,en;q=0.9',
                     'Referer': 'https://duckduckgo.com/',
                     'Sec-Fetch-Dest': 'document',
                     'Sec-Fetch-Mode': 'navigate',
                     'Sec-Fetch-Site': 'none',
                     'Sec-Fetch-User': '?1',
-                    'Upgrade-Insecure-Requests': '1'
                 })
-                headers.setdefault('Cookie', '')
                 if 'dcm' not in headers['Cookie']:
-                    headers['Cookie'] += '; dcm=1; __ddg1_=1234567890ABCDEF1234567890ABCDEF'
-
+                    headers["Cookie"] = headers.get(
+                    "Cookie", "") +  '; dcm=1; __ddg1_=1234567890ABCDEF1234567890ABCDEF'
+        logger.info("get_enhanced_headers():%s", headers)
         return headers

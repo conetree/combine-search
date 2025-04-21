@@ -27,7 +27,7 @@ if [ ! -f "$LOG_FILE" ]; then
     echo "日志文件 $LOG_FILE 已创建。"
 fi
 
-PORT=8088
+PORT=8006
 
 # 检查端口是否已被占用
 if lsof -i :$PORT | grep LISTEN > /dev/null; then

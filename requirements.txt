@@ -38,7 +38,6 @@ gitdb==4.0.10
 GitPython==3.1.32
 gradio==3.40.1
 gradio_client==0.4.0
-greenlet==2.0.2
 h11==0.14.0
 httpcore==0.17.3
 httpx==0.24.1
@@ -175,7 +174,14 @@ zipp==3.16.2
 zstandard==0.23.0
 firecrawl-py==1.15.0
 scrapy==2.12.0
+duckduckgo_search==8.0.1
 selenium==4.30.0
 chrome_version==0.3.1
 webdriver-manager==4.0.2
 cloudscraper==1.2.71
+fake_useragent==2.2.0
+# greenlet==3.2.0
+# playwright==1.51.0
+playwright==1.39.0
+# playwright install
+# pyee==12.1.1

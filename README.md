@@ -82,7 +82,7 @@ cp .env.example .env
 
 ```bash
 # 开发环境启动
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8006
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
 
 # 或启动脚本
 sh startup.sh

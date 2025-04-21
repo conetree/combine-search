@@ -72,6 +72,10 @@ class GoogleService(BaseSearch):
             if filter_links:
                 request_urls = self._extract_request_urls(filter_links, links_num)
                 contents_result = self._fetch_contents_concurrently(request_urls, headers)
+
+                if mode == "html":
+                    return response_success("从搜索结果中抓取的源码内容", contents_result)
+
                 for item in contents_result:
                     if item.get("content"):
                         item["content"] = self.extract_content_text(item["content"])

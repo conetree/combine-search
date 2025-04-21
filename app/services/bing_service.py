@@ -21,7 +21,7 @@ ALLOWED_DOMAIN = config["ALLOWED_DOMAIN"]
 
 
 class BingService(BaseSearch):
-    def __init__(self, http_tool = "request", **kwargs):
+    def __init__(self, http_tool = "curl", **kwargs):
         super().__init__(**kwargs)
         self.http_tool = http_tool
 
@@ -77,6 +77,10 @@ class BingService(BaseSearch):
             logger.info(f"BingService search_web before _fetch_contents_concurrently cost: {time.time() - start_time}")
             contents_result = self._fetch_contents_concurrently(request_urls, headers)
             logger.info(f"BingService search_web after _fetch_contents_concurrently cost: {time.time() - start_time}")
+
+            if mode == "html":
+                return response_success("从搜索结果中抓取的源码内容", contents_result)
+
             # 对返回内容进行文本提取清洗
             for item in contents_result:
                 if item.get("content"):

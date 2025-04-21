@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.api.api import api_router
 from app.routes.search_routes import router as search_router
 
 app = FastAPI(
@@ -21,7 +22,8 @@ app.add_middleware(
 
 @app.get("/")
 def homepage():
-    return {"message": "Welcome to CombineSearch system."}
+    return {"message": "welcome to text copilot."}
 
 # 注册路由
+app.include_router(api_router, prefix="/copilot-agent") 
 app.include_router(search_router, prefix="/search")

@@ -5,6 +5,7 @@ from app.services.bing_service import BingService
 from app.services.baidu_service import BaiduService
 from app.services.google_service import GoogleService
 from app.services.sogou_service import SogouService
+from app.services.douban_service import DoubanService
 from app.services.so_service import SoService
 
 from typing import Dict, Type
@@ -72,6 +73,7 @@ class DefaultSearchEngineFactory:
             "baidu": BaiduService,
             "google": GoogleService,
             "sogou": SogouService,
+            "douban": DoubanService,
             "so": SoService
         }
         for name, service_cls in default_services.items():

@@ -7,17 +7,16 @@ import requests
 import json
 from pydantic import PrivateAttr
 
-
 class InternalLLM(LLM):
-    """封装大模型API"""
-
+    """封装开源大模型API"""
+    
     # 使用 PrivateAttr 来存储非 pydantic 字段
     _session_id: str = PrivateAttr()
 
     def __init__(self, session_id: str = None, **kwargs):
         super().__init__(**kwargs)
         self._session_id = session_id or "default_session"
-
+    
     @property
     def _llm_type(self) -> str:
         return "internal_llm"
@@ -36,17 +35,17 @@ class InternalLLM(LLM):
         }
 
         # logger.info(f"Request InternalLLM - prompt: {prompt}")
-        promptObj = json.loads(prompt)["input"]
+        promptObj=json.loads(prompt)["input"]
 
         # logger.info(f"Request InternalLLM - promptList: {promptObj["promptList"]}")
-
+        # TODO: 这里需要根据实际的token进行替换
         data = {
-            "service_name": "lego-catalog-generate",
-            "prompt_id": "111828549",
+            "service_name": "text-copilot-generate",
+            "prompt_id": "123",
             "prompt_version": "latest",
-            "prompt_token": "f6286f9cf4701544c59847e68e0f6c59",
+            "prompt_token": "********",
             # "prompt_variable": promptObj["variable"],
-            "prompt_list": promptObj["promptList"],
+            "prompt_list":promptObj["promptList"],
             "job_id": self._session_id,
             "response_mode": 1,
             "prompt_variable": json.dumps({
@@ -56,16 +55,15 @@ class InternalLLM(LLM):
         }
 
         # logger.info(f"Request InternalLLM - data: {json.dumps(data)}")
-
+        
         response = requests.post(
-            settings.INTERNAL_AI_API_URL +
-            '/prompt/api/completions?job_id={self._session_id}',
+            settings.INTERNAL_AI_API_URL + '/prompt/api/completions?job_id={self._session_id}',
             headers=headers,
             json=data
         )
 
         # logger.info(f"Request InternalLLM - response: {response.text}")
-
+        
         if response.status_code != 200:
             raise Exception(f"AI API调用失败: {response.text}")
 
@@ -77,4 +75,4 @@ class InternalLLM(LLM):
         return {
             "model_name": "internal_llm",
             "api_url": settings.INTERNAL_AI_API_URL + '/prompt/api/completions?job_id=lagoaicatalog'
-        }
+        } 

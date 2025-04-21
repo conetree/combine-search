@@ -5,11 +5,6 @@
     - 利用 WebScraper 对抓取到的内容进行解析处理
 """
 
-from fastapi import HTTPException
-from firecrawl import FirecrawlApp
-import requests
-from urllib.parse import urlparse, parse_qs
-from duckduckgo_search import DDGS
 from app.services.base_search import BaseSearch
 from app.utils.web_utils import WebUtils
 from app.core.logging import logger

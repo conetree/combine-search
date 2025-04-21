@@ -10,6 +10,7 @@
       - ScrapyClient：使用 Scrapy 框架抓取
       - SeleniumClient：使用 Selenium WebDriver 抓取
       - CloudscraperClient：使用 Cloudscraper 框架抓取
+      - PlaywrightClient： 使用 Playwright 框架抓取
 """
 import shutil
 import subprocess
@@ -31,9 +32,12 @@ from selenium import webdriver
 from selenium.webdriver import ChromeOptions
 from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import WebDriverException
+from selenium.webdriver.support.ui import WebDriverWait
 import cloudscraper
 import chrome_version
 from webdriver_manager.chrome import ChromeDriverManager
+from typing import List, Dict
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from app.core.logging import logger
 from app.utils.web_utils import WebUtils
 
@@ -63,14 +67,14 @@ class BaseWebClient:
         检查是否触发反爬虫策略，返回是否应重试以及错误信息
         """
         if retry_statuses is None:
-            # 状态码是403、503表示被反爬虫命中
-            retry_statuses = [403, 503]
+            # 状态码是403、429、503表示被反爬虫命中
+            retry_statuses = [403, 429, 503]
 
         if status_code in retry_statuses:
             error_detail = self.ERROR_MESSAGE.get(
                 "anti-crawler", "Blocked by anti-crawler strategy")
             logger.warning(
-                "Received anti-crawler status code %s, retrying...", status_code)
+                f"Received anti-crawler status code %s, retrying...{attempt+1}/{self.DEFAULT_RETRIES}", status_code)
             sleep(2 ** attempt + random.uniform(0, 1))
             return True, error_detail
 
@@ -82,9 +86,13 @@ class BaseWebClient:
             - 记录警告日志
             - 根据尝试次数等待后重试
         """
+        delay_time = 2 ** attempt + random.uniform(1, 2)
+        retry_tips = f"{delay_time:.1f}s 后重试" if attempt + \
+            1 < self.DEFAULT_RETRIES else " 重试结束 "
         logger.warning(
-            f"Attempt {attempt+1}/{self.DEFAULT_RETRIES} failed: {error}. Retrying...")
-        sleep(2 ** attempt + random.uniform(0, 1))
+            f"{self.__class__.__name__}: 尝试 {attempt + 1}/{self.DEFAULT_RETRIES} 失败，{retry_tips}，错误：{error}")
+        if attempt + 1 < self.DEFAULT_RETRIES:
+            time.sleep(delay_time)
 
 
 class AgentClient(BaseWebClient):
@@ -100,8 +108,6 @@ class AgentClient(BaseWebClient):
         """
         使用代理服务抓取目标 URL 内容
         """
-        if self.agent_url == "":
-                    raise HTTPException(status_code=502, detail="agent_url地址为空，无法抓取")
         logger.info("AgentClient fetch url: %s", url)
         error_detail = ""
         for attempt in range(self.DEFAULT_RETRIES):
@@ -120,6 +126,8 @@ class AgentClient(BaseWebClient):
                 should_retry, error_detail = self._check_anti_crawler(
                     attempt, response.status_code)
                 if should_retry:
+                    logger.warning(
+                        "request url: %s error_detail:%s", url, error_detail)
                     continue  # 进入下一轮 retry
 
                 response.raise_for_status()
@@ -161,10 +169,11 @@ class CurlClient(BaseWebClient):
                     curl_command,
                     capture_output=True,
                     text=True,
-                    check=True
+                    check=True,
+                    timeout=self.DEFAULT_TIMEOUT + 3,  # 额外延时防止超时未捕获
                 )
-                
-                output = result.stdout
+
+                output = result.stdout or ''
                 # 解析状态码和内容
                 lines = output.split('\n')
                 status_code_line = lines[-1].strip() if lines else ''
@@ -178,14 +187,25 @@ class CurlClient(BaseWebClient):
                 should_retry, error_detail = self._check_anti_crawler(
                     attempt, status_code)
                 if should_retry:
+                    logger.warning(
+                        "request url: %s error_detail:%s", url, error_detail)
                     continue  # 进入下一轮 retry
 
                 # 状态码正常，返回内容
                 return content
 
+            except subprocess.CalledProcessError as e:
+                error_detail = f"子进程错误: {e.stderr}"
+                self._handle_retry(attempt, e)
+            except subprocess.TimeoutExpired as e:
+                error_detail = "请求超时"
+                self._handle_retry(attempt, e)
             except Exception as e:
                 error_detail = str(e)
                 self._handle_retry(attempt, e)
+            finally:
+                # 确保子进程被终止（即使出现异常）
+                pass  # 若子进程未自动终止，可添加强制终止逻辑
 
         # 重试次数用尽后抛出异常
         error_detail = self._wrap_error_detail("CurlClient", url, error_detail)
@@ -219,15 +239,16 @@ class SimpleHTTPClient(BaseWebClient):
                     timeout=self.DEFAULT_TIMEOUT,
                     verify=False
                 )
-
+                responseText = response.text
                 # 可根据返回码判断是否命中反爬规则（例如 403、503）
                 should_retry, error_detail = self._check_anti_crawler(
                     attempt, response.status_code)
                 if should_retry:
+                    logger.warning(
+                        "request url: %s error_detail:%s", url, error_detail)
                     continue  # 进入下一轮 retry
-
                 response.raise_for_status()
-                return response.text
+                return responseText
             except Exception as e:
                 error_detail = str(e)
                 self._handle_retry(attempt, e)
@@ -282,6 +303,8 @@ class FirecrawlClient(BaseWebClient):
                     should_retry, error_detail = self._check_anti_crawler(
                         attempt, status_code)
                     if should_retry:
+                        logger.warning(
+                            "request url: %s error_detail:%s", url, error_detail)
                         continue  # 进入下一轮 retry
 
                 # 情况2：处理空内容（可能是反爬导致的假空页面）
@@ -320,6 +343,8 @@ class BeautifulSoupClient(BaseWebClient):
                 should_retry, error_detail = self._check_anti_crawler(
                     attempt, response.status_code)
                 if should_retry:
+                    logger.warning(
+                        "request url: %s error_detail:%s", url, error_detail)
                     continue  # 进入下一轮 retry
 
                 response.raise_for_status()
@@ -379,14 +404,14 @@ class ScrapyClient(BaseWebClient):
 
         def parse(self, response):
             if response.status in [403, 503]:
-                self.logger.warning(f"触发反爬状态码 {response.status}")
+                logger.warning(f"触发反爬状态码 {response.status}")
                 self.queue.put({"status": response.status,
                                "error_detail": "触发反爬状态码，需要人工解除。"})
                 return
 
             # 检测验证页面
             if "antibot-challenge" in response.text:
-                self.logger.warning("检测到验证页面")
+                logger.warning("检测到验证页面")
                 self.queue.put({"status": response.status,
                                "error_detail": "验证页面触发反爬策略，需要人工解除。"})
                 return
@@ -395,7 +420,7 @@ class ScrapyClient(BaseWebClient):
 
         def errback(self, failure):
             # 处理超时等网络错误
-            self.logger.warning("请求异常：%s", failure.getErrorMessage())
+            logger.warning("请求异常：%s", failure.getErrorMessage())
             self.queue.put(
                 {"status": 0, "error_detail": f"请求失败：{failure.getErrorMessage()}"})
 
@@ -405,13 +430,13 @@ class ScrapyClient(BaseWebClient):
             if attempt <= self.DEFAULT_RETRIES:  # 额外重试次数
                 # 指数退避 + 随机抖动
                 delay = 2 ** attempt + random.uniform(0, 2)
-                self.logger.info(f"第{attempt}次重试，延迟{delay:.1f}s")
+                logger.info(f"第{attempt}次重试，延迟{delay:.1f}s")
                 new_request = request.copy()
                 new_request.meta['attempt'] = attempt
                 new_request.dont_filter = True  # 避免被过滤
                 return new_request.replace(delay=delay)
             else:
-                self.logger.error("重试次数耗尽")
+                logger.error("重试次数耗尽")
                 self.queue.put("")  # 防止主进程卡死
 
     def __init__(self, **kwargs):
@@ -441,6 +466,8 @@ class ScrapyClient(BaseWebClient):
                         should_retry, _ = self._check_anti_crawler(
                             attempt, result.get("status", 503))
                         if should_retry:
+                            logger.warning(
+                                "request url: %s error_detail:%s", url, error_detail)
                             continue
                         raise Exception(error_detail)
                     result_text = result.get("text", "").strip()
@@ -452,6 +479,8 @@ class ScrapyClient(BaseWebClient):
                     should_retry, error_detail = self._check_anti_crawler(
                         attempt, 503)
                     if should_retry:
+                        logger.warning(
+                            "request url: %s error_detail:%s", url, error_detail)
                         continue
 
                 proc.join()
@@ -469,7 +498,7 @@ class ScrapyClient(BaseWebClient):
                 proc.join(timeout=self.DEFAULT_TIMEOUT)
                 if proc.is_alive():
                     proc.terminate()
-                    proc.join() # 确保资源被回收
+                    proc.join()  # 确保资源被回收
         error_detail = self._wrap_error_detail(
             "ScrapyClient", url, error_detail)
         raise HTTPException(status_code=502, detail=error_detail)
@@ -536,7 +565,7 @@ class SeleniumClient(BaseWebClient):
     def __init__(self, headless=True, **kwargs):
         super().__init__(**kwargs)
         self.headless = headless
-        self.timeout = self.DEFAULT_TIMEOUT * 2
+        self.timeout = self.DEFAULT_TIMEOUT * 3
         self.webdriver_options = None
         self.webdriver_service = None
         self.chrome_path = self._detect_chrome_binary()
@@ -594,7 +623,9 @@ class SeleniumClient(BaseWebClient):
 
         # 无头模式增强配置
         if self.headless:
+            # 设置无头版本为new某些情况因版本不对则渲染不成功
             options.add_argument("--headless=new")
+            # options.add_argument("--headless=old")
             options.add_argument("--disable-gpu")
             options.add_argument("--remote-debugging-port=9222")
             options.add_argument("--disable-dev-shm-usage")
@@ -720,7 +751,19 @@ class SeleniumClient(BaseWebClient):
                 should_retry, error_detail = self._check_anti_crawler(
                     attempt, response_code)
                 if should_retry:
+                    logger.warning(
+                        "request url: %s error_detail:%s", url, error_detail)
                     continue  # 进入下一轮 retry
+
+                # 等待渲染[可选]
+                wait = WebDriverWait(driver, 10)
+                # 显式等待关键元素加载（示例：等待<body>渲染）
+                # WebDriverWait(driver, self.timeout).until(
+                #     EC.presence_of_element_located((By.TAG_NAME, "body"))
+                # )
+                # 也可以等待整个页面的 JavaScript 执行完成（使用 document.readyState）
+                wait.until(lambda d: d.execute_script(
+                    "return document.readyState") == "complete")
 
                 return driver.page_source
 
@@ -792,9 +835,11 @@ class SeleniumClient_simple(BaseWebClient):
         # 无头模式增强配置
         if self.headless:
             options.add_argument("--headless=new")
+            # options.add_argument("--headless")
             options.add_argument("--disable-gpu")
             options.add_argument("--remote-debugging-port=9222")
             options.add_argument("--disable-dev-shm-usage")
+            options.add_argument('lang=zh_CN.UTF-8')
 
         # 通用防检测配置
         options.add_argument("--no-sandbox")
@@ -869,7 +914,7 @@ class SeleniumClient_simple(BaseWebClient):
                 if driver:
                     driver.quit()
         error_detail = self._wrap_error_detail(
-            "SeleniumClient_client", url, error_detail)
+            "SeleniumClient_simple_client", url, error_detail)
         raise HTTPException(status_code=502, detail=error_detail)
 
 
@@ -941,7 +986,8 @@ class CloudscraperClient(BaseWebClient):
                 request_params = {
                     'headers': enhanced_headers,
                     'timeout': self.DEFAULT_TIMEOUT + random.randint(1, 5),
-                    'allow_redirects': random.choice([True, False]),
+                    # 'allow_redirects': random.choice([True, False]),
+                    'allow_redirects': True,  # 默认启用重定向
                     'params': {'_t': int(time.time())}  # 添加随机时间戳参数
                 }
 
@@ -957,6 +1003,8 @@ class CloudscraperClient(BaseWebClient):
                 should_retry, error_detail = self._check_anti_crawler(
                     attempt, response.status_code)
                 if should_retry:
+                    logger.warning(
+                        "request url: %s error_detail:%s", url, error_detail)
                     self._handle_anti_crawl_retry(
                         attempt, response.status_code)
                     continue  # 进入下一轮 retry
@@ -965,6 +1013,7 @@ class CloudscraperClient(BaseWebClient):
                 # anti_crawl_conditions = [
                 #     "cloudflare" in response.text.lower(),
                 #     "access denied" in response.text.lower(),
+                #     "请输入验证码" in response.text,
                 #     len(response.text) < 1024  # 小页面可能是验证页
                 # ]
                 # if any(anti_crawl_conditions):
@@ -984,39 +1033,196 @@ class CloudscraperClient(BaseWebClient):
         raise HTTPException(status_code=502, detail=error_detail)
 
 
-class CloudscraperClient_simple(BaseWebClient):
+class PlaywrightClient(BaseWebClient):
     """
-    利用 cloudscraper 绕过反爬虫防护的客户端简版[可选]
+    基于Playwright的浏览器客户端，具备高级反爬绕过能力
     """
 
-    def __init__(self, **kwargs):
+    # 默认浏览器配置
+    BROWSER_CONFIG = {
+        'headless': True,                   # 是否无头
+        'slow_mo': random.randint(150, 450),  # 操作延迟，模拟人速
+        'proxy': None,                      # 代理服务器
+        'user_agent': None,                 # 自定义UA
+        'viewport': {'width': 1366, 'height': 768},
+        'bypass_csp': True,                 # 绕过内容安全策略
+        'stealth_mode': True,               # 启用反检测脚本
+        'user_data_dir': None,              # 可选用户数据目录
+    }
+
+    def __init__(self, config: Dict = None, **kwargs):
         super().__init__(**kwargs)
-        # 使用 cloudscraper 创建会话, 它内置了解决 Cloudflare 等防护机制的方案
-        self.scraperSession = cloudscraper.create_scraper()
+        # 合并外部配置
+        if config:
+            self.BROWSER_CONFIG.update(config)
+        # UA 生成
+        if not self.BROWSER_CONFIG['user_agent']:
+            self.BROWSER_CONFIG['user_agent'] = self._generate_realistic_ua()
+        self.chrome_path = self._detect_chrome_binary()
 
-    def fetch(self, url: str, headers: dict = None):
-        logger.info("CloudscraperClient fetch url: %s", url)
+    def _detect_chrome_binary(self) -> str:
+        """检测Chrome安装路径"""
+        common_paths = [
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium',
+            '/opt/google/chrome/chrome',
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            r'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        ]
+
+        for path in common_paths:
+            if Path(path).exists():
+                logger.info(f"检测到Chrome路径: {path}")
+                return str(path)
+
+        # 尝试环境变量查找
+        env_path = shutil.which("google-chrome") or shutil.which("chrome")
+        if env_path:
+            logger.info(f"检测到Chrome路径: {env_path}")
+            return env_path
+
+        # 如果没有找到Chrome路径，返回None
+        logger.warning("未能检测到Chrome路径，Playwright将使用默认的Chromium浏览器。")
+        return None
+
+    def _generate_realistic_ua(self) -> str:
+        """随机生成 Chrome UA"""
+        versions = ['120.0.6099.224', '121.0.6167.140',
+                    '122.0.6261.112', '123.0.6312.88']
+        return (
+            f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            f"AppleWebKit/537.36 (KHTML, like Gecko) "
+            f"Chrome/{random.choice(versions)} Safari/537.36"
+        )
+
+    def _rotate_fingerprint(self):
+        """每次重试时随机轮换 UA 和视窗大小"""
+        logger.info("PlaywrightClient: 轮换浏览器指纹")
+        self.BROWSER_CONFIG['user_agent'] = self._generate_realistic_ua()
+        self.BROWSER_CONFIG['viewport'] = {
+            'width': random.choice([1366, 1440, 1536, 1600]),
+            'height': random.choice([768, 900, 1024, 1080])
+        }
+
+    def _anti_detection_actions(self, page):
+        """模拟鼠标移动和滚动，反检测行为"""
+        for _ in range(random.randint(3, 7)):
+            x = random.randint(0, self.BROWSER_CONFIG['viewport']['width'])
+            y = random.randint(0, self.BROWSER_CONFIG['viewport']['height'])
+            page.mouse.move(x, y)
+            time.sleep(random.uniform(0.1, 0.3))
+        page.evaluate(f"window.scrollBy(0, {random.randint(200, 800)})")
+        time.sleep(random.uniform(0.5, 1.2))
+
+    def _check_denied_crawler(self, page) -> bool:
+        """检测反爬机制触发状态"""
+        # 检查常见反爬特征
+        detection_indicators = [
+            ('验证码', '//div[contains(@class, "captcha-container")]'),
+            ('访问限制', 'text=Access Denied'),
+            ('流量异常', 'text=Unusual Traffic')
+        ]
+
+        for text, xpath in detection_indicators:
+            if page.query_selector(xpath) is not None:
+                logger.warning(f"检测到反爬特征: {text}")
+                return True
+        return False
+
+    def fetch(self, url: str, headers: Dict[str, str] = None) -> str:
+        """
+        1. 将所有 sync_playwright 调用放入同一上下文，确保不跨线程/Greenlet
+        2. 保留重试、指纹轮换、反爬检测逻辑
+        """
         error_detail = ""
-        # 生成自定义 header, 根据 URL 定制请求头
-        enhanced_headers = WebUtils.get_enhanced_headers(url, headers)
-        for attempt in range(self.DEFAULT_RETRIES):
-            try:
-                response = self.scraperSession.get(
-                    url,
-                    headers=enhanced_headers,
-                    timeout=self.DEFAULT_TIMEOUT
-                )
-                # 可根据返回码判断是否命中反爬规则（例如 403、503）
-                should_retry, error_detail = self._check_anti_crawler(
-                    attempt, response.status_code)
-                if should_retry:
-                    continue  # 进入下一轮 retry
+        # 在同一 Greenlet/线程中启动 Playwright
+        with sync_playwright() as pw:
+            for attempt in range(self.DEFAULT_RETRIES):
+                browser = context = page = None
+                # 在 for 循环内 每轮尝试都用 try/finally 管理，
+                # 确保当轮的 browser、context、page 在结束时被立即关闭
+                try:
+                    browser = pw.chromium.launch(
+                        headless=self.BROWSER_CONFIG['headless'],
+                        slow_mo=self.BROWSER_CONFIG['slow_mo'],
+                        executable_path=self.chrome_path,  # 优先使用检测到的Chrome路径
+                        proxy={'server': self.BROWSER_CONFIG['proxy']}
+                        if self.BROWSER_CONFIG['proxy'] else None,
+                        args=[
+                            '--disable-blink-features=AutomationControlled',
+                            '--disable-infobars',
+                            '--no-sandbox',
+                            f"--window-size={self.BROWSER_CONFIG['viewport']['width']},"
+                            f"{self.BROWSER_CONFIG['viewport']['height']}",
+                            '--disable-web-security',
+                            '--disable-features=IsolateOrigins,site-per-process'
+                        ]
+                    )
+                    context = browser.new_context(
+                        user_agent=self.BROWSER_CONFIG['user_agent'],
+                        viewport=self.BROWSER_CONFIG['viewport'],
+                        bypass_csp=self.BROWSER_CONFIG['bypass_csp']
+                    )
+                    # 注入反检测脚本
+                    if self.BROWSER_CONFIG['stealth_mode']:
+                        context.add_init_script("""
+                            delete navigator.__proto__.webdriver;
+                            Object.defineProperty(navigator, 'plugins', {
+                                get: () => [1,2,3]
+                            });
+                        """)
+                    # 地理位置模拟
+                    context.grant_permissions(['geolocation'])
+                    context.set_geolocation({
+                        'latitude': random.uniform(-90, 90),
+                        'longitude': random.uniform(-180, 180)
+                    })
 
-                response.raise_for_status()
-                return response.text
-            except Exception as e:
-                error_detail = str(e)
-                self._handle_retry(attempt, e)
-        error_detail = self._wrap_error_detail("CloudscraperClient_simple",
-                                               url, error_detail)
-        raise HTTPException(status_code=502, detail=error_detail)
+                    page = context.new_page()
+                    # 增强请求头
+                    enhanced = WebUtils.get_enhanced_headers(url, headers)
+                    page.set_extra_http_headers(enhanced)
+
+                    # 导航并获取响应状态
+                    response = page.goto(
+                        url, timeout=self.DEFAULT_TIMEOUT * 1000)
+                    status_code = response.status
+                    should_retry, error_detail = self._check_anti_crawler(
+                        attempt, status_code)
+                    if should_retry or self._check_denied_crawler(page):
+                        error_detail = error_detail if error_detail == '' else "页面中含有验证码或拒绝访问"
+                        logger.warning(
+                            "检测到反爬机制：request url: %s error_detail:%s", url, error_detail)
+                        # 执行反检测行为
+                        self._anti_detection_actions(page)
+                        self._rotate_fingerprint()
+                        continue
+
+                    # 获取渲染后内容并检查反爬
+                    content = page.content()
+                    return content
+
+                except PlaywrightTimeoutError as e:
+                    error_detail = f"页面加载超时：{e}"
+                    self._handle_retry(attempt, e)
+                except Exception as e:
+                    error_detail = str(e)
+                    self._handle_retry(attempt, e)
+                finally:
+                    # 显式 close，确保不留残余 transport
+                    try:
+                        if page:
+                            page.close()
+                        if context:
+                            context.close()
+                        if browser:
+                            browser.close()
+                    except:
+                        pass
+
+        # 所有重试用尽，抛出异常
+        raise HTTPException(
+            status_code=503,
+            detail=self._wrap_error_detail(
+                "PlaywrightClient", url, error_detail)
+        )
