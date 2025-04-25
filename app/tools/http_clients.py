@@ -1185,7 +1185,7 @@ class PlaywrightClient(BaseWebClient):
 
                     # 导航并获取响应状态
                     response = page.goto(
-                        url, timeout=self.DEFAULT_TIMEOUT * 1000)
+                        url, timeout=self.DEFAULT_TIMEOUT * 500)
                     status_code = response.status
                     should_retry, error_detail = self._check_anti_crawler(
                         attempt, status_code)
@@ -1217,7 +1217,8 @@ class PlaywrightClient(BaseWebClient):
                             context.close()
                         if browser:
                             browser.close()
-                    except:
+                    except Exception as e:
+                        logger.error(f"PlaywrightClient 资源释放时发生异常: {e}")
                         pass
 
         # 所有重试用尽，抛出异常
@@ -1226,3 +1227,4 @@ class PlaywrightClient(BaseWebClient):
             detail=self._wrap_error_detail(
                 "PlaywrightClient", url, error_detail)
         )
+
