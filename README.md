@@ -1,6 +1,8 @@
 # Combine Search简介
 
 基于多种搜索引擎和爬虫工具，抓取搜索结果相关网页，再组装提示词，最后调用大型模型进行分析，返回生成结果。适用于各种想抓取网页再用大模型分析的情形。
+<img width="1499" alt="image" src="https://github.com/user-attachments/assets/5648d0e4-addb-46e6-ad3e-e321d3975637" />
+
 
 ## 功能
 
