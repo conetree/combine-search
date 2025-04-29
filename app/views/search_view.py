@@ -4,7 +4,7 @@ def render_page(data):
         <html lang="zh-CN">
         <head>
             <meta charset="UTF-8">
-            <title>AI网页抓取方式</title>
+            <title>乐高AI网页抓取方式</title>
             <style>
                 /* Your CSS styles here */
                 .search-container {{
@@ -104,15 +104,15 @@ def render_page(data):
         <body>
             <div class="search-container">
                 <h1>基于剧名抓取网络数据</h1>
-                <form id="search-form" action="/search/duckduckgo-web">
+                <form id="search-form" action="/api/search/duckduckgo-web">
                     <div class="search-links">
-                        <span class="search-link" data-url="/search/bing-web" title="bing搜索">Bing</span>
-                        <span class="search-link" data-url="/search/baidu-web" title="百度搜索">百度</span>
-                        <span class="search-link" data-url="/search/duckduckgo-web" title="Duckduckgo搜索">DuckDuckGo</span>
-                        <span class="search-link" data-url="/search/google-web" title="Google搜索">Google</span>
-                        <span class="search-link" data-url="/search/sogou-web" title="搜狗搜索">搜狗</span>
-                        <span class="search-link" data-url="/search/so-web" title="360搜索">360</span>
-                        <span class="search-link" data-url="/search/douban-web" title="豆瓣电影">豆瓣</span>
+                        <span class="search-link" data-url="/api/search/bing-web" title="bing搜索">Bing</span>
+                        <span class="search-link" data-url="/api/search/baidu-web" title="百度搜索">百度</span>
+                        <span class="search-link" data-url="/api/search/duckduckgo-web" title="Duckduckgo搜索">DuckDuckGo</span>
+                        <span class="search-link" data-url="/api/search/google-web" title="Google搜索">Google</span>
+                        <span class="search-link" data-url="/api/search/sogou-web" title="搜狗搜索">搜狗</span>
+                        <span class="search-link" data-url="/api/search/so-web" title="360搜索">360</span>
+                        <span class="search-link" data-url="/api/search/douban-web" title="豆瓣电影">豆瓣</span>
                     </div>
                     <input type="text" id="search-query" name="q" class="search-input" value="我是刑警 电视剧 豆瓣 百科" placeholder="请输入关键词：狂飙 电视剧 百科 豆瓣"><button type="submit" class="search-button">搜索</button>
                     <div class="options-container">
@@ -155,8 +155,8 @@ def render_page(data):
                 function selectLink(link) {{
                     $searchLinks.forEach(l => l.classList.remove('selected'));
                     link.classList.add('selected');
-                    const doubanUrl = '/search/douban-web'
-                    const baiduUrl = '/search/baidu-web'
+                    const doubanUrl = '/api/search/douban-web'
+                    const baiduUrl = '/api/search/baidu-web'
                     if(link.getAttribute("data-url") == doubanUrl) {{
                         $query.value = defaultQuery.substr(0, defaultQuery.indexOf(" "));
                     }} else if(link.getAttribute("data-url") == baiduUrl) {{

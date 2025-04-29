@@ -22,8 +22,12 @@ app.add_middleware(
 
 @app.get("/")
 def homepage():
-    return {"message": "welcome to text copilot."}
+    return {"message": "welcome to Lego catalog-agent."}
 
 # 注册路由
-app.include_router(api_router, prefix="/copilot-agent") 
+app.include_router(api_router, prefix="/catalog-agent") 
 app.include_router(search_router, prefix="/search")
+
+# 通过api接口访问
+app.include_router(api_router, prefix="/api/catalog-agent")
+app.include_router(search_router, prefix="/api/search")

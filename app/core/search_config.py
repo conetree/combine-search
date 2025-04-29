@@ -4,7 +4,7 @@ config = {
     "MAX_CONTENT_LENGTH": 1000000000,  # 内容截断长度
     "DEFAULT_RETRIES": 3,  # 重试次数
     "DEFAULT_TIMEOUT": 10,  # 超时时间（单位：秒）
-    "AGENT_URL": "http://proxy.agentapi.com/agent",  # 代理服务地址TODO: 换成自己的代理服务地址
+    "AGENT_URL": "http://api-qui.qiyi.domain/services/agent",  # 代理服务地址
     # Firecrawl API Key（从https://www.firecrawl.dev/获取）
     "FIRECRAWL_API_KEY": "fc-938f767537f44797bf7b9d96140b6531",
     "DUCKDUCKGO_URL": "https://duckduckgo.com/html/",

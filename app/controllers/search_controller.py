@@ -113,79 +113,79 @@ class SearchController:
             "message": "用以下几种方式抓取网页，各有优劣。",
             "paths": [
                 {
-                    "path": "/search/bing-web?q=念无双 电视剧 豆瓣 百科&mode=link",
+                    "path": "/api/search/bing-web?q=念无双 电视剧 豆瓣 百科&mode=link",
                     "desc": "基于bing网页搜索抓取，返回链接。"
                 },
                 {
-                    "path": "/search/baidu-web?q=念无双 电视剧 豆瓣 百科&mode=text&links_num=5",
+                    "path": "/api/search/baidu-web?q=念无双 电视剧 豆瓣 百科&mode=text&links_num=5",
                     "desc": "基于baidu网页搜索抓取，指定抓取数量，默认2条。"
                 },
                 {
-                    "path": "/search/google-web?q=念无双 电视剧 豆瓣 百科",
+                    "path": "/api/search/google-web?q=念无双 电视剧 豆瓣 百科",
                     "desc": "基于google网页搜索抓取，返回文本。需要穿墙，故使用firecrawl工具抓取，免费有次数限制"
                 },
                 {
-                    "path": "/search/douban-web?q=念无双&http_tool=agent",
+                    "path": "/api/search/douban-web?q=念无双&http_tool=agent",
                     "desc": "基于豆瓣影视搜索抓取，通过Nginx代理工具，返回文本。"
                 },
                 {
-                    "path": "/search/sogou-web?q=念无双 电视剧 豆瓣 百科&mode=link&http_tool=curl",
+                    "path": "/api/search/sogou-web?q=念无双 电视剧 豆瓣 百科&mode=link&http_tool=curl",
                     "desc": "基于sogou网页搜索抓取，指定工具和模式。"
                 },
                 {
-                    "path": "/search/so-web?q=念无双 电视剧 豆瓣 百科&http_tool=curl&links_num=3",
+                    "path": "/api/search/so-web?q=念无双 电视剧 豆瓣 百科&http_tool=curl&links_num=3",
                     "desc": "基于360网页搜索抓取，通过agent工具，抓取3条。"
                 },
                 {
-                    "path": "/search/duckduckgo-web?q=念无双 电视剧 豆瓣 百科",
+                    "path": "/api/search/duckduckgo-web?q=念无双 电视剧 豆瓣 百科",
                     "desc": "基于duckduckgo网页搜索抓取，返回文本。需要穿墙，默认使用firecrawl工具抓取，免费有次数限制"
                 },
                 {
-                    "path": "/search/duckduckgo-web?q=念无双 电视剧 豆瓣 百科&mode=link",
+                    "path": "/api/search/duckduckgo-web?q=念无双 电视剧 豆瓣 百科&mode=link",
                     "desc": "基于duckduckgo网页搜索抓取，返回链接。"
                 },
                 {
-                    "path": "/search/duckduckgo-api?q=念无双 电视剧 豆瓣 百科",
+                    "path": "/api/search/duckduckgo-api?q=念无双 电视剧 豆瓣 百科",
                     "desc": "基于duckduckgo-search插件抓取，返回文本。需要支持穿墙。"
                 },
                 {
-                    "path": "/search/duckduckgo-suggest?q=念无双 电视剧",
+                    "path": "/api/search/duckduckgo-suggest?q=念无双 电视剧",
                     "desc": "基于duckduckgo API抓取suggest。"
                 },
                 {
-                    "path": "/search/fetch-request?url=https://movie.douban.com&url=https://baike.baidu.com",
+                    "path": "/api/search/fetch-request?url=https://movie.douban.com&url=https://baike.baidu.com",
                     "desc": "直接使用内置的 HTTP 请求库进行抓取。方法简单且效率高，但在面对复杂网站时失败率可能较高。"
                 },
                 {
-                    "path": "/search/fetch-curl?url=https://movie.douban.com&url=https://baike.baidu.com&mode=text",
+                    "path": "/api/search/fetch-curl?url=https://movie.douban.com&url=https://baike.baidu.com&mode=text",
                     "desc": "利用系统的 curl 命令进行抓取。执行速度快，直接发送 HTTP 请求，但需要确保系统支持 curl。"
                 },
                 {
-                    "path": "/search/fetch-agent?url=https://movie.douban.com&url=https://baike.baidu.com",
+                    "path": "/api/search/fetch-agent?url=https://movie.douban.com&url=https://baike.baidu.com",
                     "desc": "通过 Nginx 代理服务器进行抓取。适用于需要绕过封禁或进行定向请求的场景，抓取失败时可以作为备份。"
                 },
                 {
-                    "path": "/search/fetch-firecrawl?url=https://movie.douban.com&url=https://baike.baidu.com",
+                    "path": "/api/search/fetch-firecrawl?url=https://movie.douban.com&url=https://baike.baidu.com",
                     "desc": "使用 Firecrawl 库进行抓取。该库专为大规模网络抓取设计，功能强大，免费版有次数限制。可穿墙访问。"
                 },
                 {
-                    "path": "/search/fetch-selenium?url=https://movie.douban.com&url=https://baike.baidu.com&mode=text",
+                    "path": "/api/search/fetch-selenium?url=https://movie.douban.com&url=https://baike.baidu.com&mode=text",
                     "desc": "采用 Selenium WebDriver 模拟浏览器行为，解析包含 JavaScript 和 CSS 的动态网页，获取完整页面内容。"
                 },
                 {
-                    "path": "/search/fetch-beautifulsoup?url=https://movie.douban.com&url=https://baike.baidu.com",
+                    "path": "/api/search/fetch-beautifulsoup?url=https://movie.douban.com&url=https://baike.baidu.com",
                     "desc": "使用 BeautifulSoup 库解析网页内容，方便地提取和过滤所需的 HTML 元素。"
                 },
                 {
-                    "path": "/search/fetch-scrapy?url=https://movie.douban.com&url=https://baike.baidu.com",
+                    "path": "/api/search/fetch-scrapy?url=https://movie.douban.com&url=https://baike.baidu.com",
                     "desc": "利用 Scrapy 框架进行抓取。适用于构建和管理大型爬虫项目，支持高效的整站数据采集。"
                 },
                 {
-                    "path": "/search/fetch-cloudscraper?url=https://movie.douban.com&url=https://baike.baidu.com",
+                    "path": "/api/search/fetch-cloudscraper?url=https://movie.douban.com&url=https://baike.baidu.com",
                     "desc": "利用 Cloudscraper 库进行抓取，推荐工具。适用于穿透Cloudflare WAF等防火墙，绕过爬虫封禁。"
                 },
                 {
-                    "path": "/search/fetch-playwright?url=https://movie.douban.com&url=https://baike.baidu.com",
+                    "path": "/api/search/fetch-playwright?url=https://movie.douban.com&url=https://baike.baidu.com",
                     "desc": "利用 Playwright 库进行抓取，内置高级反爬虫绕过功能。适用于动态渲染页面，绕过强大的爬虫封禁。"
                 },
             ]
