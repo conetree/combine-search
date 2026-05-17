@@ -158,8 +158,9 @@ class BingService(BaseSearch):
         """
         soup = BeautifulSoup(html_content, "html.parser")
         texts = []
-        for element in soup.find_all(text=True):
-            # 排除不可见区域
+        for element in soup.find_all(string=True):
+            if not getattr(element, "parent", None):
+                continue
             if element.parent.name in ["style", "script", "head", "title", "meta", "[document]"]:
                 continue
             if element.strip():

@@ -17,6 +17,8 @@ target/
 *.log
 venv/
 venv-*/
+.cursor
+.env.example
 
 ### STS ###
 .apt_generated

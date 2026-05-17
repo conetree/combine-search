@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.api import api_router
 from app.routes.search_routes import router as search_router
+from app.routes.combine_routes import router as combine_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -22,7 +23,12 @@ app.add_middleware(
 
 @app.get("/")
 def homepage():
-    return {"message": "welcome to Lego catalog-agent."}
+    return {
+        "message": "Combine Search Agent",
+        "docs": "/docs",
+        "combine": "POST /api/v1/combine",
+        "search": "/api/search",
+    }
 
 # 注册路由
 app.include_router(api_router, prefix="/catalog-agent") 
@@ -31,3 +37,4 @@ app.include_router(search_router, prefix="/search")
 # 通过api接口访问
 app.include_router(api_router, prefix="/api/catalog-agent")
 app.include_router(search_router, prefix="/api/search")
+app.include_router(combine_router, prefix="/api/v1")

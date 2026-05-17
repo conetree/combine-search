@@ -12,6 +12,7 @@
       - CloudscraperClient：使用 Cloudscraper 框架抓取
       - PlaywrightClient： 使用 Playwright 框架抓取
 """
+import os
 import shutil
 import subprocess
 import time
@@ -23,10 +24,7 @@ from typing import Dict, List, Tuple
 import requests
 from fastapi import HTTPException
 from firecrawl import FirecrawlApp
-import scrapy
 from bs4 import BeautifulSoup
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
 from multiprocessing import Process, Queue
 from selenium import webdriver
 from selenium.webdriver import ChromeOptions
@@ -109,6 +107,11 @@ class AgentClient(BaseWebClient):
         使用代理服务抓取目标 URL 内容
         """
         logger.info("AgentClient fetch url: %s", url)
+        if not (self.agent_url or "").strip():
+            raise HTTPException(
+                status_code=503,
+                detail="Agent proxy base URL is not configured (set AGENT_PROXY_BASE or AGENT_URL).",
+            )
         error_detail = ""
         for attempt in range(self.DEFAULT_RETRIES):
             try:
@@ -277,6 +280,11 @@ class FirecrawlClient(BaseWebClient):
 
     def fetch(self, url: str, headers: dict = None):
         logger.info("FirecrawlClient fetch url: %s", url)
+        if not (self.api_key or "").strip():
+            raise HTTPException(
+                status_code=503,
+                detail="FIRECRAWL_API_KEY is not configured (set env FIRECRAWL_API_KEY).",
+            )
         error_detail = ""
         for attempt in range(self.DEFAULT_RETRIES):
             try:
@@ -367,86 +375,93 @@ class BeautifulSoupClient(BaseWebClient):
 
 class ScrapyClient(BaseWebClient):
     """
-    使用 Scrapy 框架抓取页面内容的客户端
+    使用 Scrapy 框架抓取页面内容的客户端（延迟 import scrapy，避免启动时依赖链失败）。
     """
-
-    class SimpleSpider(scrapy.Spider):
-        name = "simplespider"
-        custom_settings = {
-            'DOWNLOAD_DELAY': 1,
-            'LOG_LEVEL': 'ERROR',
-            'COOKIES_ENABLED': False,
-            # === 反防爬设置 ===
-            'RETRY_TIMES': 3,  # Scrapy内置重试
-            'RETRY_HTTP_CODES': [503, 504, 403, 429],
-            'DOWNLOAD_TIMEOUT': 30,  # 增加超时
-            'USER_AGENT_ROTATION': True  # 需要配合中间件
-        }
-
-        def __init__(self, queue, target_url, custom_headers=None, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.queue = queue
-            self.target_url = target_url
-            self.custom_headers = custom_headers
-            self.retry_count = 0
-
-        def start_requests(self):
-            headers = WebUtils.get_enhanced_headers(
-                self.target_url, self.custom_headers)
-
-            yield scrapy.Request(
-                url=self.target_url,
-                headers=headers,
-                callback=self.parse,
-                errback=self.errback,  # 错误回调
-                meta={'attempt': 0}  # 记录原始请求尝试次数
-            )
-
-        def parse(self, response):
-            if response.status in [403, 503]:
-                logger.warning(f"触发反爬状态码 {response.status}")
-                self.queue.put({"status": response.status,
-                               "error_detail": "触发反爬状态码，需要人工解除。"})
-                return
-
-            # 检测验证页面
-            if "antibot-challenge" in response.text:
-                logger.warning("检测到验证页面")
-                self.queue.put({"status": response.status,
-                               "error_detail": "验证页面触发反爬策略，需要人工解除。"})
-                return
-            # 正常响应
-            self.queue.put({"status": response.status, "text": response.text})
-
-        def errback(self, failure):
-            # 处理超时等网络错误
-            logger.warning("请求异常：%s", failure.getErrorMessage())
-            self.queue.put(
-                {"status": 0, "error_detail": f"请求失败：{failure.getErrorMessage()}"})
-
-        def _retry_request(self, request):
-            """自定义重试逻辑（突破Scrapy默认重试限制）"""
-            attempt = request.meta.get('attempt', 0) + 1
-            if attempt <= self.DEFAULT_RETRIES:  # 额外重试次数
-                # 指数退避 + 随机抖动
-                delay = 2 ** attempt + random.uniform(0, 2)
-                logger.info(f"第{attempt}次重试，延迟{delay:.1f}s")
-                new_request = request.copy()
-                new_request.meta['attempt'] = attempt
-                new_request.dont_filter = True  # 避免被过滤
-                return new_request.replace(delay=delay)
-            else:
-                logger.error("重试次数耗尽")
-                self.queue.put("")  # 防止主进程卡死
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.queue = Queue()
 
     def run_crawler(self, url, headers):
+        import scrapy
+        from scrapy.crawler import CrawlerProcess
+        from scrapy.utils.project import get_project_settings
+
+        queue = self.queue
+        max_retries = self.DEFAULT_RETRIES
+
+        class SimpleSpider(scrapy.Spider):
+            name = "simplespider"
+            custom_settings = {
+                "DOWNLOAD_DELAY": 1,
+                "LOG_LEVEL": "ERROR",
+                "COOKIES_ENABLED": False,
+                "RETRY_TIMES": 3,
+                "RETRY_HTTP_CODES": [503, 504, 403, 429],
+                "DOWNLOAD_TIMEOUT": 30,
+                "USER_AGENT_ROTATION": True,
+            }
+
+            def __init__(self, *args, queue=None, target_url=None, custom_headers=None, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.queue = queue
+                self.target_url = target_url
+                self.custom_headers = custom_headers
+
+            def start_requests(self):
+                hdrs = WebUtils.get_enhanced_headers(self.target_url, self.custom_headers)
+                yield scrapy.Request(
+                    url=self.target_url,
+                    headers=hdrs,
+                    callback=self.parse,
+                    errback=self.errback,
+                    meta={"attempt": 0},
+                )
+
+            def parse(self, response):
+                if response.status in [403, 503]:
+                    logger.warning("触发反爬状态码 %s", response.status)
+                    self.queue.put(
+                        {"status": response.status, "error_detail": "触发反爬状态码，需要人工解除。"}
+                    )
+                    return
+                if "antibot-challenge" in response.text:
+                    logger.warning("检测到验证页面")
+                    self.queue.put(
+                        {
+                            "status": response.status,
+                            "error_detail": "验证页面触发反爬策略，需要人工解除。",
+                        }
+                    )
+                    return
+                self.queue.put({"status": response.status, "text": response.text})
+
+            def errback(self, failure):
+                logger.warning("请求异常：%s", failure.getErrorMessage())
+                self.queue.put(
+                    {"status": 0, "error_detail": f"请求失败：{failure.getErrorMessage()}"}
+                )
+
+            def _retry_request(self, request):
+                attempt = request.meta.get("attempt", 0) + 1
+                if attempt <= max_retries:
+                    delay = 2**attempt + random.uniform(0, 2)
+                    logger.info("第%s次重试，延迟%.1fs", attempt, delay)
+                    new_request = request.copy()
+                    new_request.meta["attempt"] = attempt
+                    new_request.dont_filter = True
+                    return new_request.replace(delay=delay)
+                logger.error("重试次数耗尽")
+                self.queue.put("")
+                return None
+
         process = CrawlerProcess(settings=get_project_settings())
-        process.crawl(self.SimpleSpider, target_url=url,
-                      queue=self.queue, custom_headers=headers)
+        process.crawl(
+            SimpleSpider,
+            queue=queue,
+            target_url=url,
+            custom_headers=headers,
+        )
         process.start()
 
     def fetch(self, url: str, headers: dict = None):
@@ -506,38 +521,48 @@ class ScrapyClient(BaseWebClient):
 
 class ScrapyClient_simple(BaseWebClient):
     """
-    使用 Scrapy 框架抓取页面内容的客户端简版[可选]
+    使用 Scrapy 框架抓取页面内容的客户端简版[可选]（延迟 import scrapy）
     """
-    class SimpleSpider(scrapy.Spider):
-        name = "simplespider"
-        custom_settings = {
-            'DOWNLOAD_DELAY': 1,
-            'LOG_LEVEL': 'ERROR',
-            'COOKIES_ENABLED': False,
-        }
-
-        def __init__(self, queue, target_url, custom_headers=None, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.queue = queue
-            self.target_url = target_url
-            self.custom_headers = custom_headers
-
-        def start_requests(self):
-            headers = WebUtils.get_enhanced_headers(
-                self.target_url, self.custom_headers)
-            yield scrapy.Request(url=self.target_url, headers=headers, callback=self.parse)
-
-        def parse(self, response):
-            self.queue.put(response.text)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.queue = Queue()
 
     def run_crawler(self, url, headers):
+        import scrapy
+        from scrapy.crawler import CrawlerProcess
+        from scrapy.utils.project import get_project_settings
+
+        queue = self.queue
+
+        class SimpleSpider(scrapy.Spider):
+            name = "simplespider"
+            custom_settings = {
+                "DOWNLOAD_DELAY": 1,
+                "LOG_LEVEL": "ERROR",
+                "COOKIES_ENABLED": False,
+            }
+
+            def __init__(self, *args, queue=None, target_url=None, custom_headers=None, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.queue = queue
+                self.target_url = target_url
+                self.custom_headers = custom_headers
+
+            def start_requests(self):
+                hdrs = WebUtils.get_enhanced_headers(self.target_url, self.custom_headers)
+                yield scrapy.Request(url=self.target_url, headers=hdrs, callback=self.parse)
+
+            def parse(self, response):
+                self.queue.put(response.text)
+
         process = CrawlerProcess(settings=get_project_settings())
-        process.crawl(self.SimpleSpider, target_url=url,
-                      queue=self.queue, custom_headers=headers)
+        process.crawl(
+            SimpleSpider,
+            queue=queue,
+            target_url=url,
+            custom_headers=headers,
+        )
         process.start()
 
     def fetch(self, url: str, headers: dict = None):
@@ -944,12 +969,21 @@ class CloudscraperClient(BaseWebClient):
             'platform': 'windows'
         }
 
-        # === 强化 cloudscraper 配置 ===
-        self.scraperSession = cloudscraper.create_scraper(
-            interpreter='nodejs',  # 使用NodeJS解析JS
-            delay=random.uniform(1, 3),  # 随机化请求延迟
-            browser=self.browser_fingerprint
-        )
+        # cloudscraper：默认不强制 nodejs；可通过环境变量 CLOUDSCRAPER_INTERPRETER=nodejs 开启
+        scraper_kwargs: Dict = {
+            "delay": random.uniform(1, 3),
+            "browser": self.browser_fingerprint,
+        }
+        interp = (os.getenv("CLOUDSCRAPER_INTERPRETER") or "").strip()
+        if interp:
+            scraper_kwargs["interpreter"] = interp
+        try:
+            self.scraperSession = cloudscraper.create_scraper(**scraper_kwargs)
+        except TypeError:
+            self.scraperSession = cloudscraper.create_scraper(
+                delay=random.uniform(1, 3),
+                browser=self.browser_fingerprint,
+            )
 
     def _handle_anti_crawl_retry(self, attempt: int, status_code: int):
         """专用反爬重试策略"""
@@ -1184,9 +1218,10 @@ class PlaywrightClient(BaseWebClient):
                     page.set_extra_http_headers(enhanced)
 
                     # 导航并获取响应状态
-                    response = page.goto(
-                        url, timeout=self.DEFAULT_TIMEOUT * 500)
-                    status_code = response.status
+                    # Playwright timeout 单位为毫秒
+                    nav_timeout_ms = max(30000, int(self.DEFAULT_TIMEOUT * 1000))
+                    response = page.goto(url, timeout=nav_timeout_ms)
+                    status_code = response.status if response else 0
                     should_retry, error_detail = self._check_anti_crawler(
                         attempt, status_code)
                     if should_retry or self._check_denied_crawler(page):

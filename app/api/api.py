@@ -1,19 +1,21 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, Request
+import asyncio
+
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, Request
 from typing import List, Optional
+from datetime import date
+
 from app.services.conversation import ConversationManager
 from app.services.scraper import WebScraper
 from uuid import uuid4
 from app.core.logging import logger
 from pydantic import BaseModel, Field
 import json
-import pandas as pd
 import os
-from docx import Document
-import pdfplumber
-import aiofiles
 import time
 from pathlib import Path
 import mimetypes
+
+import aiofiles
 
 # ====================
 # 子模型定义
@@ -38,6 +40,10 @@ class ChatParamModel(BaseModel):
     conversationTitle: Optional[str] = Field(None, max_length=200)
     hasScraper: Optional[bool] = False
     extraInfo: List[ExtraInfoModel] = Field(default_factory=list)
+    # 与 combine 共用 prompt_loader（可选）：提供 scenario 时走 YAML 模板 + LLM_DEFAULT_PROVIDER，不经过 LangChain 会话链
+    scenario: Optional[str] = Field(None, max_length=64, description="film / stock / news / product 等")
+    system_prompt_override: Optional[str] = Field(None, description="覆盖模板 system")
+    locale: Optional[str] = Field(None, max_length=16, description="如 zh，解析 film.zh.yaml")
 
 # ====================
 # 路由配置
@@ -71,18 +77,24 @@ async def process_file(file_path: Path, file_type: str) -> str:
             return ""
         
         if file_type == 'xlsx':
+            import pandas as pd
+
             df = pd.read_excel(file_path)
             return df.to_csv(index=False)
-            
+
         elif file_type == 'docx':
+            from docx import Document
+
             doc = Document(file_path)
             return "\n".join(para.text for para in doc.paragraphs if para.text)
-            
+
         elif file_type == 'txt':
             async with aiofiles.open(file_path, "r", encoding="utf-8") as f:
                 return await f.read()
-                
+
         elif file_type == 'pdf':
+            import pdfplumber
+
             with pdfplumber.open(file_path) as pdf:
                 texts = [page.extract_text() for page in pdf.pages if page.extract_text]
                 return "\n".join(filter(None, texts))
@@ -129,9 +141,10 @@ async def chat_post(
     request: Request,
     params: str = Form(...),
     file: Optional[UploadFile] = File(None),
-    session_id: str = Depends(get_session_id)
+    client_session_id: Optional[str] = Form(None),
 ):
     """大模型对话接口（POST）"""
+    session_id = (client_session_id or "").strip() or str(uuid4())
     try:
         start_time = time.time()
         knowledge = ""
@@ -164,9 +177,10 @@ async def chat_post(
             try:
                 extra_info = chat_params.extraInfo[0]
                 if extra_info.type == 1 and extra_info.value:
-                    scraped_content = await web_scraper.scrape_web_url(
-                        url=extra_info.value,
-                        headers=dict(request.headers)
+                    scraped_content = await asyncio.to_thread(
+                        web_scraper.scrape_web_url,
+                        extra_info.value,
+                        dict(request.headers),
                     )
                     knowledge += f"\n{scraped_content or ''}"
             except Exception as e:
@@ -182,10 +196,11 @@ async def chat_post(
                 logger.debug(f"Search query: {query}")
                 # spider_content = await web_scraper.baidu_search_web(query = query, links_num=3, headers = dict(request.headers))  
                 logger.info(f"API /chat before bing_search_web cost: {time.time() - start_time}")
-                spider_content = await web_scraper.bing_search_web(
-                    query=query,
-                    links_num=2,
-                    headers=dict(request.headers)
+                spider_content = await asyncio.to_thread(
+                    web_scraper.bing_search_web,
+                    query,
+                    2,
+                    dict(request.headers),
                 )
                 logger.info(f"API /chat after bing_search_web cost: {time.time() - start_time}")
                 
@@ -197,6 +212,59 @@ async def chat_post(
         final_input = chat_params.input or ""
         if knowledge:
             final_input = f"***{knowledge}***{final_input}"
+
+        # 与 combine 一致：可选 scenario → YAML 模板 + OpenAI-compatible LLM（无会话记忆）
+        if chat_params.scenario and str(chat_params.scenario).strip():
+            from app.core.config import settings as app_settings
+            from app.services.llm_router import chat_complete
+            from app.services.prompt_loader import load_scenario_prompt, render_prompt
+
+            scen = chat_params.scenario.strip().lower()
+            loc = (chat_params.locale or "").strip().lower() or None
+            try:
+                sp = load_scenario_prompt(scen, locale=loc)
+                today = date.today().isoformat()
+                q = (
+                    (chat_params.input or "").strip()
+                    or (chat_params.conversationTitle or "").strip()
+                    or "（无主题）"
+                )
+                ctx = knowledge.strip() or "(无检索正文，请明确说明信息不足)"
+                user_msg = render_prompt(
+                    sp.user,
+                    query=q,
+                    retrieved_context=ctx,
+                    current_date=today,
+                )
+                system_msg = chat_params.system_prompt_override or sp.system
+                response = await asyncio.to_thread(
+                    chat_complete,
+                    **{
+                        "provider": app_settings.LLM_DEFAULT_PROVIDER,
+                        "messages": [
+                            {"role": "system", "content": system_msg},
+                            {"role": "user", "content": user_msg},
+                        ],
+                        "temperature": 0.3,
+                    },
+                )
+                return {
+                    "response": response,
+                    "session_id": session_id,
+                    "code": 200,
+                }
+            except FileNotFoundError as e:
+                return {
+                    "response": f"提示词未找到: {e}",
+                    "session_id": session_id,
+                    "code": 400,
+                }
+            except ValueError as e:
+                return {
+                    "response": f"提示词无效: {e}",
+                    "session_id": session_id,
+                    "code": 400,
+                }
 
         # 对话处理
         conversation_manager = ConversationManager(session_id=session_id)
@@ -271,10 +339,9 @@ async def health_check():
     return {"status": "healthy"}
 
 @router.post("/clear-context")
-async def clear_context(session_id: str = Depends(get_session_id)):
+async def clear_context(session_id: str = Query(..., description="与 /chat 返回的 session_id 一致")):
     """清除对话上下文"""
     try:
-        # 假设 ConversationManager 有清除上下文的实现
         ConversationManager.clear_session(session_id)
         return {"code": 200}
     except Exception as e:

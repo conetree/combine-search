@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 import string
 import subprocess
@@ -10,6 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.core.logging import logger
+from app.services.base_search import BaseSearch
 from app.services.search_service import SearchService
 from app.services.search_engine_factory import DefaultSearchEngineFactory
 
@@ -73,17 +76,17 @@ def retry_operation(max_retries: int, delay_factor: float = 1.0):
 # --------------------
 class SearchEngineFactory:
     @staticmethod
-    def get(service_name: str, tool: str = "request", force: bool = False) -> SearchService:
+    def get(service_name: str, tool: str = "request", force: bool = False) -> BaseSearch:
         return DefaultSearchEngineFactory.get_service(service_name, tool, force)
 
 # 供随机使用的工具
 SEARCH_TOOLS = ["request", "curl", "scrapy", "cloudscraper", "agent"]
 
-def random_bing_service() -> SearchService:
+def random_bing_service() -> BaseSearch:
     tool = random.choice(SEARCH_TOOLS)
     return SearchEngineFactory.get("bing", tool)
 
-def random_baidu_service() -> SearchService:
+def random_baidu_service() -> BaseSearch:
     tool = random.choice(SEARCH_TOOLS)
     return SearchEngineFactory.get("baidu", tool)
 
@@ -91,14 +94,40 @@ def random_search_service() -> SearchService:
     tool = random.choice(SEARCH_TOOLS)
     return SearchService(tool)
 
-# 搜索引擎默认使用cloudscraper工具，反封禁能力略强
-default_search = SearchService("cloudscraper")
-bing_cloudscraper = SearchEngineFactory.get("bing", "cloudscraper")
-baidu_cloudscraper = SearchEngineFactory.get("baidu", "cloudscraper")
+# 模块级搜索服务懒加载，避免 import 时构造多份 BaseSearch（Playwright/Selenium 等）
+_default_search: SearchService | None = None
+_bing_cloudscraper: BaseSearch | None = None
+_baidu_cloudscraper: BaseSearch | None = None
+_duckduckgo_firecrawl: BaseSearch | None = None
 
-# 外网抓取部署到机房需要翻墙，因此需要使用firecrawl，但该工具要收费
-duckduckgo_firecrawl = SearchEngineFactory.get("duckduckgo", "firecrawl")
-# google_firecrawl = SearchEngineFactory.get("google", "firecrawl")
+
+def get_default_search() -> SearchService:
+    global _default_search
+    if _default_search is None:
+        _default_search = SearchService("cloudscraper")
+    return _default_search
+
+
+def get_bing_cloudscraper() -> BaseSearch:
+    global _bing_cloudscraper
+    if _bing_cloudscraper is None:
+        _bing_cloudscraper = SearchEngineFactory.get("bing", "cloudscraper")
+    return _bing_cloudscraper
+
+
+def get_baidu_cloudscraper() -> BaseSearch:
+    global _baidu_cloudscraper
+    if _baidu_cloudscraper is None:
+        _baidu_cloudscraper = SearchEngineFactory.get("baidu", "cloudscraper")
+    return _baidu_cloudscraper
+
+
+def get_duckduckgo_firecrawl() -> BaseSearch:
+    global _duckduckgo_firecrawl
+    if _duckduckgo_firecrawl is None:
+        _duckduckgo_firecrawl = SearchEngineFactory.get("duckduckgo", "firecrawl")
+    return _duckduckgo_firecrawl
+
 
 # --------------------
 # 整理抓取的内容，组装数据。默认只返回2条结果。
@@ -121,20 +150,12 @@ def wrap_response_result(response: dict, limit_num: int = 2) -> str:
 # 提取html文本
 # --------------------
 def extract_content_text(html: str) -> str:
-    """提取 HTML 可见文本"""
+    """提取 HTML 可见文本（不依赖已弃用的 BeautifulSoup text= 参数）。"""
     soup = BeautifulSoup(html, "html.parser")
-    texts = []
-    for tag in soup.find_all(text=True):
-        parent = tag.parent
-        if parent.name in ["style", "script", "head", "title", "meta"]:
-            continue
-        style = parent.get("style", "")
-        if "display:none" in style:
-            continue
-        text = tag.strip()
-        if text:
-            texts.append(text)
-    return " ".join(texts)
+    for tag in soup(["script", "style", "head", "noscript", "meta"]):
+        tag.decompose()
+    text = soup.get_text(separator=" ", strip=True)
+    return " ".join(text.split())
 
 # --------------------
 # 异常定义
@@ -184,19 +205,19 @@ class WebScraper:
     def scrape_web_url(self, url: str, headers: Optional[Dict] = None) -> str:
         """抓取单个URL的内容" 
         客户端自动选用随机搜索工具进行fetch"""
-        client = default_search.get_client()
+        client = get_default_search().get_client()
         resp = client.fetch(url, headers=headers or {})
         return extract_content_text(resp)
 
     def duckduckgo_search_web(self, query: str, links_num: int = 1, headers: Optional[Dict] = None) -> str:
         """搜索网页并根据搜索结果抓取网页返回"""
-        res = duckduckgo_firecrawl.search_web(query=query, links_num=links_num, headers=headers or {})
+        res = get_duckduckgo_firecrawl().search_web(query=query, links_num=links_num, headers=headers or {})
         data = wrap_response_result(res)
         return data.strip()
 
     def baidu_search_web(self, query: str, links_num: int = 1, headers: Optional[Dict] = None) -> str:
         """搜索网页并根据搜索结果抓取网页返回"""
-        res = baidu_cloudscraper.search_web(query=query, links_num=links_num, headers=headers or {})
+        res = get_baidu_cloudscraper().search_web(query=query, links_num=links_num, headers=headers or {})
         # res = random_baidu_service.search_web(query=query, links_num=links_num, headers=headers or {})
         data = wrap_response_result(res)
         return data.strip()
