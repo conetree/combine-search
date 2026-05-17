@@ -1,56 +1,88 @@
-# Combine Search Agent
+# Combine Search
 
-基于 **Python / FastAPI** 的组合搜索 Agent：用关键词在多搜索引擎上取结果 → 抓取网页正文 → 按 **场景化提示词** 调用 **OpenAI 兼容接口** 的大模型（OpenAI / DeepSeek / 智谱 GLM / 通义千问等）生成推荐语、精炼总结与结构化分析。
+🚀本项目是基于搜索引擎（抓取内容）+大模型（生成内容）的实际应用，主打一个简单好用。可广泛应用于各种Agent、RAG、Agentic构建。
+
+核心思路是用一条 API 把「搜网页 → 读正文 → 按场景写总结」串起来：多搜索引擎、多种抓取方式、四套业务提示词模板，再接各家 OpenAI 兼容大模型（OpenAI、DeepSeek、智谱、通义等）。
 
 ```mermaid
 flowchart LR
-  Q[Query] --> S[SearchEngine]
-  S --> F[FetchClients]
-  F --> P[ScenarioPrompts]
-  P --> L[LLM_ChatCompletions]
-  L --> O[Markdown_or_JSON]
+  classDef stepQuery fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+  classDef stepSearch fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#9a3412
+  classDef stepFetch fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#166534
+  classDef stepPrompt fill:#f3e8ff,stroke:#9333ea,stroke-width:2px,color:#6b21a8
+  classDef stepLlm fill:#fce7f3,stroke:#db2777,stroke-width:2px,color:#9d174d
+  classDef stepOut fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#854d0e
+
+  Q([检索词]):::stepQuery
+  S[搜索引擎]:::stepSearch
+  F[网页抓取]:::stepFetch
+  P[场景提示词]:::stepPrompt
+  L[大模型]:::stepLlm
+  O([结构化输出]):::stepOut
+
+  Q --> S --> F --> P --> L --> O
 ```
 
-更完整的架构、需求边界与约束说明见 **[docs/总体设计.md](docs/总体设计.md)**；功能规格见 **[docs/SPEC.md](docs/SPEC.md)**。  
-给其他大模型 / AI 助手继续开发：**[AGENTS.md](AGENTS.md)** → **[docs/skills/](docs/skills/)**。
+## 这个仓库解决什么问题
 
-## 能力概览
+运营、编辑、内容类产品里常见一类需求：先根据剧名/商品/新闻主题去网上找材料，再按固定格式写出推荐语、摘要或简报。手工做要反复打开搜索、复制链接、粘贴进对话，格式也不统一。
+
+本仓库把这条链路做成可部署的服务：
+
+- **搜索与抓取可换**：Bing、百度、DuckDuckGo 等引擎，配合 request、cloudscraper、Playwright 等客户端，按站点情况降级重试。
+- **输出按场景约束**：影视、资讯、股票、商品四套 YAML 模板，占位符注入检索正文；也可用 `PROMPTS_DIR` 在部署侧覆盖，不必改代码。
+- **模型可切换**：同一套 Chat Completions 协议，换环境变量即可换厂商。
+
+适合当作内部「检索 + 提炼」微服务，或在此基础上接自己的前端与权限体系。更细的边界与合规说明见下文「合规与边界」。
+
+## 延伸阅读：AI 编程知识库
+
+若你在用 AI 辅助写代码、维护提示词或扩展本仓库，可参考 [MicroWind | AI 编程核心知识库](https://microwind.github.io/)：算法与设计模式、Prompt Engineering、Skills 体系等，和「怎么指挥 AI 改工程」相关，与本项目的 `docs/skills/` 文档可以对照着看。
+
+## 文档与协作开发
+
+| 文档 | 内容 |
+|------|------|
+| [docs/SPEC.md](docs/SPEC.md) | 功能规格、API 字段、验收方式 |
+| [docs/总体设计.md](docs/总体设计.md) | 架构、模块划分、设计取舍 |
+| [AGENTS.md](AGENTS.md) → [docs/skills/](docs/skills/) | 给其他模型/协作者看的开发约定 |
+
+## 能力一览
 
 | 能力 | 说明 |
 |------|------|
-| 依赖安装 | **全量**：`pip install -r requirements.txt`（core + torch/gradio/streamlit 等）。**仅 API/搜索/combine**：`pip install -r requirements-core.txt` |
-| 搜索引擎 | Bing、Baidu、DuckDuckGo、Google、搜狗、360、豆瓣（见工厂注册） |
-| 抓取客户端 | `request` / `curl` / `cloudscraper` / `playwright` / `selenium` / `firecrawl` / `agent` 等 |
-| 组合接口 | `POST /api/v1/combine`：一次请求完成搜索 + 提炼 |
-| 提示词管理 | `GET /api/v1/prompts/scenarios`（可选 `?locale=`）；`POST /api/v1/prompts/upload`（需 `PROMPTS_DIR` + `X-Prompts-Admin-Key`）；`PROMPTS_DIR` 外部覆盖（见 [docs/总体设计.md](docs/总体设计.md) §5） |
-| 场景模板 | `film` / `stock` / `news` / `product`，内置 YAML，可用 `PROMPTS_DIR` 覆盖 |
-| 大模型 | 统一 **Chat Completions** HTTP，切换 `llm_provider` 与可选 `model` |
+| 依赖 | 只要 API：`pip install -r requirements-core.txt`；含 Gradio/torch 等：`pip install -r requirements.txt` |
+| 搜索 | Bing、Baidu、DuckDuckGo、Google、搜狗、360、豆瓣 |
+| 抓取 | request、curl、cloudscraper、playwright、selenium、firecrawl、agent 等 |
+| 主接口 | `POST /api/v1/combine`：一次请求完成搜索 + 提炼 |
+| 提示词 | 内置四场景；`GET /api/v1/prompts/scenarios`；外置目录 `PROMPTS_DIR`；可选上传接口 |
+| 大模型 | `llm_provider` 指定厂商，可选 `model` 覆盖默认模型名 |
 
 ## 合规与边界
 
-- 无法保证绕过所有反爬（验证码、登录墙、强 WAF）。生产环境请优先 **官方 API**、**授权数据**、**Firecrawl** 或合规代理。
-- 请遵守目标站 **robots.txt** 与服务条款；控制频率；密钥与抓取责任由部署方承担。
-- **股票等金融场景**：本仓库输出仅供信息整理，**非投资建议**；权威行情请使用持牌数据接口。
+- 不保证能过所有验证码、登录墙或强 WAF；线上建议优先用官方 API、授权数据源，或 Firecrawl 等合规通道。
+- 请遵守目标站的 robots.txt 与服务条款，控制访问频率；密钥与抓取后果由部署方负责。
+- **股票场景**：输出仅供信息整理，不构成投资建议；行情请以持牌数据源为准。
 
 ## 快速开始
 
-推荐使用 **Python 3.11+** 的虚拟环境；全量依赖里含 pandas / 可选爬虫栈，在部分系统上直接 `import app.main` 可能较慢或触发与本机二进制包不兼容的问题，组合接口单测使用轻量 FastAPI 子应用规避重依赖。
+建议 Python 3.11+ 虚拟环境。若本机 `import app.main` 较慢，多半是 pandas/爬虫栈较重；跑单测会用轻量子应用，不影响日常开发。
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-core.txt   # 或 requirements.txt 全量
 
 cp .env.example .env
-# 至少配置一个 LLM 的 API Key（如 OPENAI_API_KEY），以及可选 FIRECRAWL_API_KEY、AGENT_PROXY_BASE
+# 至少填一个 LLM Key，例如 OPENAI_API_KEY
 
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8002
 ```
 
-- Swagger：`http://localhost:8002/docs`
+- 接口文档：`http://localhost:8002/docs`
 - 健康检查：`GET http://localhost:8002/api/v1/health`
 
-### 一键组合示例
+### 调用示例
 
 ```bash
 curl -s -X POST "http://localhost:8002/api/v1/combine" \
@@ -66,72 +98,65 @@ curl -s -X POST "http://localhost:8002/api/v1/combine" \
   }'
 ```
 
-或使用脚本：`python examples/demo_combine.py`（需先启动服务）。可选 Gradio：`pip install -r requirements-extra.txt` 后 `python examples/gradio_combine_demo.py`。
+也可运行 `python examples/demo_combine.py`（需先启动服务）。需要简单页面时：`pip install -r requirements-extra.txt` 后执行 `python examples/gradio_combine_demo.py`。
 
-## 主要环境变量
+## 环境变量（常用）
 
 | 变量 | 含义 |
 |------|------|
-| `OPENAI_API_KEY` / `OPENAI_API_BASE` | OpenAI 兼容密钥与 Base URL |
+| `OPENAI_API_KEY` / `OPENAI_API_BASE` | OpenAI 及兼容端点 |
 | `DEEPSEEK_API_KEY` | DeepSeek |
 | `ZHIPU_API_KEY` | 智谱 GLM |
-| `DASHSCOPE_API_KEY` | 阿里云 DashScope（千问兼容模式） |
-| `LLM_DEFAULT_PROVIDER` | 旧版 `/catalog-agent/chat` 无内部网关时默认厂商，默认 `openai` |
-| `INTERNAL_AI_API_URL` | 可选：内部旧网关；留空则走 OpenAI 兼容客户端 |
-| `FIRECRAWL_API_KEY` | Firecrawl 抓取（可选） |
-| `AGENT_PROXY_BASE` | 可选：`?url=` 转发抓取代理根地址 |
-| `ALLOWED_DOMAIN` | 逗号分隔，搜索结果域名过滤 |
-| `DEFAULT_FETCH_CHAIN` | 组合检索正文过短时，`link` 模式后的抓取降级链，如 `cloudscraper,request,curl` |
-| `PROMPTS_DIR` | 覆盖内置提示词目录（同名 `film.yaml` 等） |
-| `PROMPTS_CACHE_ENABLED` | `true` 时按文件 mtime 缓存模板加载结果 |
-| `PROMPTS_ADMIN_KEY` | 与请求头 `X-Prompts-Admin-Key` 一致时允许 `POST /api/v1/prompts/upload` |
-| `CLOUDSCRAPER_INTERPRETER` | 若需 Node 解 JS 挑战可设为 `nodejs`（需本机安装 Node） |
+| `DASHSCOPE_API_KEY` | 通义（DashScope 兼容模式） |
+| `LLM_DEFAULT_PROVIDER` | 遗留 `/catalog-agent/chat` 默认厂商 |
+| `INTERNAL_AI_API_URL` | 可选内部旧网关 |
+| `FIRECRAWL_API_KEY` | Firecrawl |
+| `AGENT_PROXY_BASE` | `?url=` 代理抓取根地址 |
+| `ALLOWED_DOMAIN` | 搜索结果域名白名单 |
+| `DEFAULT_FETCH_CHAIN` | 正文过短时的抓取降级链，如 `cloudscraper,request,curl` |
+| `PROMPTS_DIR` | 外置提示词目录 |
+| `PROMPTS_CACHE_ENABLED` | 是否按文件修改时间缓存模板 |
+| `PROMPTS_ADMIN_KEY` | 与 `X-Prompts-Admin-Key` 配合，允许上传模板 |
 
-完整占位见 [.env.example](.env.example)。
+完整列表见 [.env.example](.env.example)。
 
 ## API 摘要
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/v1/combine` | 组合搜索 + LLM（推荐主入口） |
-| GET | `/api/v1/prompts/scenarios` | 列出场景模板及来源；可选查询参数 `locale` |
-| POST | `/api/v1/prompts/upload` | 上传场景 YAML（需 `PROMPTS_ADMIN_KEY` 与 `PROMPTS_DIR`） |
-| GET | `/api/v1/health` | 服务健康 |
-| GET | `/api/search/...` | 各搜索引擎与 `fetch-*` 抓取端点（遗留/调试） |
-| POST | `/api/catalog-agent/chat` | 表单多模对话；若 params 含 **`scenario`**（及可选 `locale`），则与 combine 共用 YAML 模板 + 默认 LLM（无 LangChain 多轮） |
+| POST | `/api/v1/combine` | 组合搜索 + 大模型（主入口） |
+| GET | `/api/v1/prompts/scenarios` | 场景模板列表，可选 `?locale=` |
+| POST | `/api/v1/prompts/upload` | 上传 YAML（需 `PROMPTS_ADMIN_KEY` 与 `PROMPTS_DIR`） |
+| GET | `/api/v1/health` | 健康检查 |
+| GET | `/api/search/...` | 单引擎搜索与抓取（调试、遗留） |
+| POST | `/api/catalog-agent/chat` | 表单对话；`params` 里带 `scenario` 时与 combine 共用模板 |
 
-## 项目结构（核心）
+## 目录结构（核心）
 
 ```
 app/
-├── main.py                 # FastAPI 入口
-├── routes/
-│   ├── combine_routes.py   # /api/v1/*
-│   └── search_routes.py
-├── services/
-│   ├── combine_pipeline.py # 编排
-│   ├── fetch_orchestrator.py
-│   ├── llm_router.py       # OpenAI 兼容 chat.completions
-│   ├── prompt_loader.py
-│   └── ...
-├── prompts/                # film / stock / news / product YAML
-├── tools/http_clients.py   # 多抓取实现
-└── core/config.py          # pydantic-settings
+├── main.py
+├── routes/combine_routes.py    # /api/v1/*
+├── services/combine_pipeline.py
+├── services/llm_router.py
+├── services/prompt_loader.py
+├── prompts/                    # film / stock / news / product
+└── tools/http_clients.py
 ```
 
 ## Playwright（可选）
 
-若使用 `http_tool=playwright`，需安装浏览器内核：
+使用 `http_tool=playwright` 时需安装浏览器：
 
 ```bash
 playwright install chromium
 ```
 
-## 开发说明
+## 开发
 
-- 业务配置：`app/core/search_config.py`（多数项可由环境变量覆盖）。
-- 单测：`pytest tests/ -q`（`tests/test_combine_pipeline.py` 对 `/api/v1/combine` 与 `run_combine` 使用 mock，无需外网与 API Key）。
-- 遗留 `POST /chat` 的浏览器调试片段见 [examples/chat_fetch_browser_example.js](examples/chat_fetch_browser_example.js)。
+- 配置：`app/core/search_config.py`（多数项可用环境变量覆盖）
+- 测试：`pytest tests/ -q`
+- 遗留 `POST /chat` 浏览器示例：[examples/chat_fetch_browser_example.js](examples/chat_fetch_browser_example.js)
 
 ## License
 
